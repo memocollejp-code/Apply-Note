@@ -1,0 +1,1724 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>アプリ開発ログ</title>
+<link rel="manifest" href="manifest.json">
+<style>
+:root {
+  --bg: #0f1117;
+  --surface: #181c27;
+  --surface2: #1f2436;
+  --border: #2a2f45;
+  --accent: #5b8df6;
+  --accent2: #7c5bf6;
+  --green: #3ecf8e;
+  --yellow: #f5c842;
+  --red: #f56565;
+  --orange: #f6854a;
+  --text: #e8eaf0;
+  --text2: #8891a8;
+  --text3: #5a6177;
+  --radius: 12px;
+  --radius-sm: 8px;
+  font-size: 16px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,'Hiragino Sans',sans-serif;overscroll-behavior:none}
+body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;position:relative}
+
+/* ── Update Banner ── */
+#update-banner{display:none;position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:var(--accent);color:#fff;padding:12px 16px;z-index:999;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px}
+#update-banner.hidden{display:none!important}
+#update-banner button{background:#fff;color:var(--accent);border:none;border-radius:6px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer}
+
+/* ── Nav ── */
+nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:var(--surface);border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(3,1fr);z-index:100;padding-bottom:env(safe-area-inset-bottom)}
+nav button{background:none;border:none;color:var(--text3);padding:10px 4px 8px;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;cursor:pointer;transition:color .2s}
+nav button.active{color:var(--accent)}
+nav button svg{width:22px;height:22px}
+
+/* ── Main ── */
+main{flex:1;overflow-y:auto;padding:16px 16px calc(70px + env(safe-area-inset-bottom));padding-top:16px}
+main.with-banner{padding-top:60px}
+main.hidden{display:none!important}
+
+/* ── Header ── */
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.page-header h1{font-size:16px;font-weight:700;letter-spacing:-.2px}
+.page-header h2{font-size:15px;font-weight:700}
+
+/* ── Search Box ── */
+.search-box{position:relative;margin-bottom:14px}
+.search-box input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 36px 10px 36px;color:var(--text);font-size:14px;font-family:inherit}
+.search-box input:focus{outline:none;border-color:var(--accent)}
+.search-box .search-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--text3);pointer-events:none}
+.search-box .search-clear{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);font-size:16px;padding:4px 6px;cursor:pointer;display:none}
+.search-box input:not(:placeholder-shown) ~ .search-clear{display:block}
+.search-empty{text-align:center;padding:30px 16px;color:var(--text3);font-size:13px}
+
+/* ── Today Summary ── */
+.today-summary{background:linear-gradient(135deg,#1a2040,#1e1a40);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:16px}
+.today-summary h3{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+.today-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+.today-item{text-align:center;padding:4px 0}
+.today-item .num{font-size:18px;font-weight:800;line-height:1}
+.today-item .lbl{font-size:9px;color:var(--text2);margin-top:3px;line-height:1.3}
+.today-item.c-want .num{color:var(--yellow)}
+.today-item.c-done .num{color:var(--accent)}
+.today-item.c-pending .num{color:var(--orange)}
+.today-item.c-verify .num{color:var(--accent2)}
+
+/* ── App Card ── */
+.app-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;margin-bottom:7px;cursor:pointer;transition:border-color .2s;display:flex;align-items:center;gap:10px}
+.app-card:active{border-color:var(--accent)}
+.app-card-body{flex:1;min-width:0}
+.app-card-header{display:flex;align-items:center;gap:8px;margin-bottom:3px}
+.app-name{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-ver{font-size:11px;color:var(--accent);background:#1a2a50;padding:1px 6px;border-radius:20px;font-weight:600;flex-shrink:0}
+.app-meta{font-size:11px;color:var(--text3);margin-bottom:4px}
+.app-stats{display:flex;gap:6px;flex-wrap:wrap}
+.stat-pill{font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600;white-space:nowrap}
+.stat-pill.want{background:#2a2200;color:var(--yellow)}
+.stat-pill.pending{background:#2a1800;color:var(--orange)}
+.app-card-arrow{color:var(--text3);font-size:14px;flex-shrink:0}
+
+/* ── Btn ── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;border-radius:var(--radius-sm);padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;transition:opacity .2s}
+.btn:active{opacity:.7}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-ghost{background:var(--surface2);color:var(--text)}
+.btn-danger{background:#3a1515;color:var(--red)}
+.btn-sm{padding:6px 12px;font-size:12px}
+.btn-icon{width:40px;height:40px;padding:0;border-radius:50%;font-size:18px}
+
+/* ── FAB ── */
+.fab{position:fixed;bottom:calc(72px + env(safe-area-inset-bottom));right:16px;width:52px;height:52px;background:var(--accent);border:none;border-radius:50%;color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 20px rgba(91,141,246,.4);z-index:50;transition:transform .2s}
+.fab:active{transform:scale(.93)}
+
+/* ── Detail top ── */
+.detail-header{margin-bottom:20px}
+.back-btn{background:none;border:none;color:var(--text2);font-size:14px;cursor:pointer;display:flex;align-items:center;gap:4px;margin-bottom:12px;padding:0}
+.detail-info{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px}
+.detail-info-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px}
+.detail-info-row:not(:last-child){border-bottom:1px solid var(--border)}
+.detail-info-row .key{color:var(--text2)}
+.detail-info-row .val{font-weight:600;color:var(--text);word-break:break-all;text-align:right;max-width:65%}
+.detail-info-row a{color:var(--accent);text-decoration:none}
+
+/* ── Tabs ── */
+.tabs{display:flex;gap:6px;margin-bottom:16px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:7px 14px;font-size:13px;font-weight:600;color:var(--text2);cursor:pointer;white-space:nowrap;flex-shrink:0}
+.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* ── Fix Cards ── */
+.fix-section{margin-bottom:20px}
+.fix-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.fix-section-title .badge{background:var(--surface2);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}
+.fix-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px}
+.fix-card-title{font-size:14px;font-weight:600;margin-bottom:10px}
+.fix-actions{display:flex;gap:6px;flex-wrap:wrap}
+.fix-date{font-size:11px;color:var(--text3);margin-top:8px}
+
+/* ── Checklist ── */
+.checklist{margin:8px 0}
+.check-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px;cursor:pointer}
+.check-item:last-child{border-bottom:none}
+.check-box{width:20px;height:20px;border:2px solid var(--border);border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;transition:all .2s}
+.check-box.checked{background:var(--green);border-color:var(--green);color:#fff}
+
+/* ── Note ── */
+.note-area{width:100%;min-height:200px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;color:var(--text);font-size:14px;line-height:1.7;resize:none;font-family:inherit}
+.note-area:focus{outline:none;border-color:var(--accent)}
+
+/* ── Prompt Cards ── */
+.prompt-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px}
+.prompt-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.prompt-title{font-size:14px;font-weight:700}
+.prompt-preview{font-size:13px;color:var(--text2);line-height:1.6;white-space:pre-wrap;word-break:break-all;max-height:80px;overflow:hidden}
+.prompt-actions{display:flex;gap:6px;margin-top:10px}
+.fav-star{font-size:18px;cursor:pointer;transition:transform .2s}
+.fav-star:active{transform:scale(1.3)}
+
+/* ── Release History ── */
+.release-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius-sm);padding:12px;margin-bottom:10px}
+.release-ver{font-size:14px;font-weight:700;color:var(--accent);margin-bottom:4px}
+.release-date{font-size:12px;color:var(--text2);margin-bottom:6px}
+.release-notes{font-size:13px;color:var(--text);line-height:1.6}
+
+/* ── Ideas ── */
+.idea-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px}
+.idea-card-top{display:flex;align-items:flex-start;gap:10px}
+.idea-text{flex:1;min-width:0}
+.idea-title{font-size:14px;font-weight:600}
+.idea-desc{font-size:13px;color:var(--text2);margin-top:2px;white-space:pre-wrap;word-break:break-word}
+.idea-date{font-size:11px;color:var(--text3);margin-top:6px}
+.idea-actions-col{display:flex;flex-direction:column;gap:4px;flex-shrink:0}
+.idea-actions-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.idea-category-group{margin-bottom:18px}
+.idea-category-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.idea-category-label .badge{background:var(--surface2);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;color:var(--text)}
+
+/* ── Screenshots ── */
+.screenshot-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.screenshot-item{position:relative;border-radius:var(--radius-sm);overflow:hidden;background:var(--surface2);aspect-ratio:9/16}
+.screenshot-item img{width:100%;height:100%;object-fit:cover}
+.screenshot-item .del-ss{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.6);border:none;border-radius:50%;width:24px;height:24px;color:#fff;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.screenshot-caption{font-size:11px;color:var(--text2);padding:4px 4px 0;position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.8));color:#fff;padding:16px 6px 6px;font-size:11px}
+
+/* ── Modal ── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:flex;align-items:flex-end;justify-content:center}
+.overlay.hidden{display:none}
+.modal{background:var(--surface);border-radius:20px 20px 0 0;padding:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto}
+.modal-title{font-size:17px;font-weight:700;margin-bottom:16px}
+.modal-actions{display:flex;gap:8px;margin-top:16px}
+.modal-actions .btn{flex:1}
+.form-group{margin-bottom:14px}
+.form-label{font-size:13px;font-weight:600;color:var(--text2);display:block;margin-bottom:6px}
+.form-input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;color:var(--text);font-size:14px;font-family:inherit}
+.form-input:focus{outline:none;border-color:var(--accent)}
+textarea.form-input{min-height:100px;resize:none;line-height:1.6}
+
+/* ── Empty ── */
+.empty{text-align:center;padding:40px 20px;color:var(--text3)}
+.empty svg{width:48px;height:48px;margin-bottom:12px;opacity:.4}
+.empty p{font-size:14px;line-height:1.6}
+
+/* ── Toast ── */
+.toast{position:fixed;bottom:calc(80px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 18px;font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;z-index:300;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:1}
+
+/* ── URL Preview Buttons ── */
+.url-link-row{display:flex;align-items:center;gap:8px;max-width:60%;justify-content:flex-end}
+.url-link-text{color:var(--accent);text-decoration:none;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px}
+.url-open-btn{display:inline-flex;align-items:center;gap:3px;background:var(--accent);color:#fff;border:none;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap;flex-shrink:0}
+.url-open-btn.github{background:#24292f}
+.url-open-btn.pwa{background:var(--green);color:#0a2a1a}
+.divider{border:none;border-top:1px solid var(--border);margin:16px 0}
+.section-title{font-size:13px;font-weight:700;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:.6px}
+.publish-btn-row{display:flex;gap:8px;margin-bottom:16px}
+</style>
+</head>
+<body>
+
+<!-- Update Banner -->
+<div id="update-banner" class="hidden">
+  <span>🔄 新しいバージョンがあります</span>
+  <button onclick="applyUpdate()">更新</button>
+</div>
+
+<!-- Pages -->
+<main id="page-home"></main>
+<main id="page-ideas" class="hidden"></main>
+<main id="page-settings" class="hidden"></main>
+<main id="page-detail" class="hidden"></main>
+
+<!-- FAB -->
+<button class="fab hidden" id="fab" onclick="openFab()">＋</button>
+
+<!-- Bottom Nav -->
+<nav>
+  <button onclick="showPage('home')" id="nav-home" class="active">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    ホーム
+  </button>
+  <button onclick="showPage('ideas')" id="nav-ideas">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    アイデア
+  </button>
+  <button onclick="showPage('settings')" id="nav-settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+    設定
+  </button>
+</nav>
+
+<!-- Modals -->
+<div class="overlay hidden" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" id="modal-content" onclick="event.stopPropagation()"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── IndexedDB ──────────────────────────────
+const DB_NAME = 'appdev-log-db';
+const DB_VERSION = 2;
+let db;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const d  = e.target.result;
+      const tx = e.target.transaction;
+      if (!d.objectStoreNames.contains('apps'))        d.createObjectStore('apps',        {keyPath:'id'});
+      if (!d.objectStoreNames.contains('fixes'))       { const s=d.createObjectStore('fixes',{keyPath:'id'}); s.createIndex('appId','appId'); s.createIndex('status','status'); }
+      if (!d.objectStoreNames.contains('releases'))    { const s=d.createObjectStore('releases',{keyPath:'id'}); s.createIndex('appId','appId'); }
+      if (!d.objectStoreNames.contains('notes'))       { const s=d.createObjectStore('notes',{keyPath:'id'}); s.createIndex('appId','appId'); }
+      if (!d.objectStoreNames.contains('prompts'))     { const s=d.createObjectStore('prompts',{keyPath:'id'}); s.createIndex('appId','appId'); }
+      if (!d.objectStoreNames.contains('screenshots')) { const s=d.createObjectStore('screenshots',{keyPath:'id'}); s.createIndex('appId','appId'); }
+      if (!d.objectStoreNames.contains('ideas')) {
+        const s = d.createObjectStore('ideas',{keyPath:'id'});
+        s.createIndex('category','category');
+      } else {
+        // v1 → v2: 既存の ideas ストアに category インデックスを追加
+        const s = tx.objectStore('ideas');
+        if (!s.indexNames.contains('category')) s.createIndex('category','category');
+      }
+      // prompts ストアに ideaId インデックスを追加（アイデア専用プロンプト用）
+      if (d.objectStoreNames.contains('prompts')) {
+        const s = tx.objectStore('prompts');
+        if (!s.indexNames.contains('ideaId')) s.createIndex('ideaId','ideaId');
+      }
+    };
+    req.onsuccess = e => { db = e.target.result; resolve(db); };
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+function tx(store, mode='readonly') {
+  return db.transaction(store, mode).objectStore(store);
+}
+
+function getAll(store) {
+  return new Promise((res, rej) => {
+    const req = tx(store).getAll();
+    req.onsuccess = () => res(req.result);
+    req.onerror   = () => rej(req.error);
+  });
+}
+
+function getByIndex(store, indexName, value) {
+  return new Promise((res, rej) => {
+    const req = tx(store).index(indexName).getAll(value);
+    req.onsuccess = () => res(req.result);
+    req.onerror   = () => rej(req.error);
+  });
+}
+
+function put(store, data) {
+  return new Promise((res, rej) => {
+    const req = tx(store,'readwrite').put(data);
+    req.onsuccess = () => res();
+    req.onerror   = () => rej(req.error);
+  });
+}
+
+function del(store, id) {
+  return new Promise((res, rej) => {
+    const req = tx(store,'readwrite').delete(id);
+    req.onsuccess = () => res();
+    req.onerror   = () => rej(req.error);
+  });
+}
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+// ── デバウンスヘルパー ────────────────────────
+// 同じkeyで呼ぶたびに前回のタイマーをリセットする。テキストエリアのoninputから
+// 都度DB書き込みすると負荷が高いため、入力が一定時間止まったタイミングでのみ保存する。
+const _debounceTimers = {};
+function debounce(key, fn, delayMs) {
+  if (_debounceTimers[key]) clearTimeout(_debounceTimers[key]);
+  _debounceTimers[key] = setTimeout(() => { delete _debounceTimers[key]; fn(); }, delayMs || 800);
+}
+// 保留中のデバウンス保存があれば待たずに即時実行する（画面遷移・閉じる際に呼ぶ）
+function flushDebounce(key) {
+  if (_debounceTimers[key]) {
+    clearTimeout(_debounceTimers[key]);
+    delete _debounceTimers[key];
+    return true; // 保留中だった = 呼び出し元で即時保存処理を実行する必要がある
+  }
+  return false;
+}
+
+// ── 検索ボックス共通ヘルパー ──────────────────
+// id: input要素のid / placeholder: プレースホルダ文字列 / onInputFn: 入力時に呼ぶ関数名(文字列)
+function searchBoxHtml(id, placeholder, onInputFn) {
+  return `
+  <div class="search-box">
+    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" id="${id}" placeholder="${placeholder}" value="${esc(_searchState[id]||'')}"
+      oninput="${onInputFn}(this.value)">
+    <button class="search-clear" type="button" onclick="document.getElementById('${id}').value='';${onInputFn}('');document.getElementById('${id}').focus()">✕</button>
+  </div>`;
+}
+// 各検索ボックスの入力値を画面遷移後も保持するための状態
+const _searchState = {};
+
+// ── 連打防止ガード ───────────────────────────
+// ボタン押下から処理完了までボタンを disabled にして多重実行を防ぐ。
+// btnEl にはボタン要素自体を渡す（onclick="fn(this)" の形で呼ぶ）。
+// window.event への依存は環境によって機能しないことがあるため使用しない。
+function guardClick(btnEl) {
+  if (!btnEl || typeof btnEl.disabled === 'undefined') return () => {};
+  if (btnEl.disabled) return null; // すでに処理中 → 呼び出し元はnullチェックで多重実行を中断する
+  const originalText = btnEl.textContent;
+  btnEl.disabled = true;
+  btnEl.dataset.origText = originalText;
+  btnEl.textContent = '処理中...';
+  return () => { btnEl.disabled = false; btnEl.textContent = btnEl.dataset.origText || originalText; };
+}
+
+// ── State ──────────────────────────────────
+let currentPage = 'home';
+let currentAppId = null;
+let currentTab = 'fixes';
+let swRegistration = null;
+
+const STATUS_ORDER = ['want','done','pending','verify','complete'];
+const STATUS_LABEL = { want:'修正したい', done:'修正済み', pending:'公開待ち', verify:'再現確認', complete:'完了' };
+const STATUS_COLOR = { want:'var(--yellow)', done:'var(--accent)', pending:'var(--orange)', verify:'var(--accent2)', complete:'var(--green)' };
+
+// ── Service Worker ──────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    swRegistration = reg;
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      nw.addEventListener('statechange', () => {
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+          document.getElementById('update-banner').classList.remove('hidden');
+          document.querySelectorAll('main').forEach(m => m.classList.add('with-banner'));
+        }
+      });
+    });
+  });
+  navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+}
+
+function applyUpdate() {
+  if (swRegistration && swRegistration.waiting) {
+    swRegistration.waiting.postMessage({type:'SKIP_WAITING'});
+  }
+}
+
+// ── Navigation ─────────────────────────────
+function showPage(page) {
+  // 詳細画面のノートタブから離れる場合は自動保存（非同期だが待たずに遷移）
+  if (currentPage === 'detail' && currentTab === 'note' && page !== 'detail') {
+    autoSaveNoteIfNeeded();
+  }
+  // アイデア追加/編集モーダルが開いたまま画面遷移する場合も自動保存
+  autoSaveIdeaIfNeeded();
+  currentPage = page;
+  ['home','ideas','settings','detail'].forEach(p => {
+    document.getElementById('page-'+p).classList.toggle('hidden', p!==page);
+  });
+  ['home','ideas','settings'].forEach(p => {
+    const btn = document.getElementById('nav-'+p);
+    if (btn) btn.classList.toggle('active', p===page);
+  });
+  document.getElementById('fab').classList.toggle('hidden', page==='settings'||page==='detail');
+  if (page==='home')     renderHome();
+  if (page==='ideas')    renderIdeas();
+  if (page==='settings') renderSettings();
+}
+
+function showDetail(appId) {
+  currentAppId = appId;
+  currentTab   = 'fixes';
+  delete _searchState['fix-search']; // 別アプリを開く際は前回の検索ワードをクリア
+  // 詳細画面を開く際にブラウザ履歴に追加（スマホ戻るボタン対応）
+  history.pushState({ page: 'detail', appId }, '', '');
+  showPage('detail');
+  document.getElementById('fab').classList.remove('hidden');
+  renderDetail();
+}
+
+// ブラウザ / スマホの「戻るボタン」を処理
+window.addEventListener('popstate', (e) => {
+  // モーダルが開いていれば閉じる
+  const overlay = document.getElementById('modal-overlay');
+  if (!overlay.classList.contains('hidden')) {
+    overlay.classList.add('hidden');
+    // 履歴を元に戻す（popstateは既に消費したので再プッシュ）
+    history.pushState(e.state, '', '');
+    return;
+  }
+  // 詳細画面ならホームへ戻る
+  if (currentPage === 'detail') {
+    showPage('home');
+  }
+});
+
+// ── Render Home ─────────────────────────────
+async function renderHome() {
+  const el = document.getElementById('page-home');
+  const [apps, fixes] = await Promise.all([getAll('apps'), getAll('fixes')]);
+
+  const todayWant    = fixes.filter(f=>f.status==='want').length;
+  const todayDone    = fixes.filter(f=>f.status==='done').length;
+  const todayPending = fixes.filter(f=>f.status==='pending').length;
+  const todayVerify  = fixes.filter(f=>f.status==='verify').length;
+
+  let appsHtml = '';
+  // タスクあり（want/pending/verify）優先、同グループ内は updatedAt 降順
+  const sortedApps = apps.slice().sort((a, b) => {
+    const aFixes = fixes.filter(f => f.appId === a.id);
+    const bFixes = fixes.filter(f => f.appId === b.id);
+    const hasTask = f => ['want','pending','verify'].includes(f.status);
+    const aHas = aFixes.some(hasTask) ? 1 : 0;
+    const bHas = bFixes.some(hasTask) ? 1 : 0;
+    if (bHas !== aHas) return bHas - aHas;          // タスクありが上
+    return b.updatedAt.localeCompare(a.updatedAt);  // 同グループは新しい順
+  });
+  for (const app of sortedApps) {
+    const appFixes   = fixes.filter(f=>f.appId===app.id);
+    const wantCount  = appFixes.filter(f=>f.status==='want').length;
+    const pendCount  = appFixes.filter(f=>f.status==='pending'||f.status==='verify').length;
+    const lastPub    = app.lastPublishedAt ? relTime(app.lastPublishedAt) : '未公開';
+    const searchKey  = app.name.toLowerCase();
+    appsHtml += `
+    <div class="app-card" data-search="${esc(searchKey)}" onclick="showDetail('${app.id}')">
+      <div class="app-card-body">
+        <div class="app-card-header">
+          <span class="app-name">${esc(app.name)}</span>
+          <span class="app-ver">v${esc(app.version)}</span>
+        </div>
+        <div class="app-meta">公開: ${lastPub}</div>
+        <div class="app-stats">
+          ${wantCount>0?`<span class="stat-pill want">修正したい ${wantCount}</span>`:''}
+          ${pendCount>0?`<span class="stat-pill pending">公開待ち ${pendCount}</span>`:''}
+          ${wantCount===0&&pendCount===0?'<span style="font-size:10px;color:var(--text3)">✓ 対応なし</span>':''}
+        </div>
+      </div>
+      <span class="app-card-arrow">›</span>
+    </div>`;
+  }
+
+  el.innerHTML = `
+  <div class="page-header">
+    <h1>開発ダッシュボード</h1>
+    <button class="btn btn-sm btn-ghost" onclick="openAddApp()">＋ アプリ追加</button>
+  </div>
+  <div class="today-summary">
+    <h3>今日の開発状況</h3>
+    <div class="today-grid">
+      <div class="today-item c-want"><div class="num">${todayWant}</div><div class="lbl">修正したい</div></div>
+      <div class="today-item c-done"><div class="num">${todayDone}</div><div class="lbl">修正済み</div></div>
+      <div class="today-item c-pending"><div class="num">${todayPending}</div><div class="lbl">公開待ち</div></div>
+      <div class="today-item c-verify"><div class="num">${todayVerify}</div><div class="lbl">再現確認</div></div>
+    </div>
+  </div>
+  ${apps.length>0?searchBoxHtml('home-search','アプリ名で検索...','filterHomeApps'):''}
+  <div id="home-apps-list">
+  ${apps.length===0?`<div class="empty"><p>アプリを追加して<br>開発を管理しよう</p></div>`:appsHtml}
+  </div>
+  <div id="home-search-empty" class="search-empty hidden">該当するアプリがありません</div>`;
+
+  if (_searchState['home-search']) filterHomeApps(_searchState['home-search']);
+}
+
+function filterHomeApps(value) {
+  _searchState['home-search'] = value;
+  const q = value.trim().toLowerCase();
+  const cards = document.querySelectorAll('#home-apps-list .app-card');
+  let visibleCount = 0;
+  cards.forEach(card => {
+    const match = !q || (card.dataset.search||'').includes(q);
+    card.classList.toggle('hidden', !match);
+    if (match) visibleCount++;
+  });
+  const emptyEl = document.getElementById('home-search-empty');
+  if (emptyEl) emptyEl.classList.toggle('hidden', !(q && visibleCount===0 && cards.length>0));
+}
+
+// ── Render Detail ───────────────────────────
+async function renderDetail() {
+  const el    = document.getElementById('page-detail');
+  const app   = await getRecord('apps', currentAppId);
+  if (!app) { showPage('home'); return; }
+  const fixes = await getByIndex('fixes','appId',currentAppId);
+
+  const tabContent = await renderTab(app, fixes);
+  el.innerHTML = `
+  <div class="detail-header">
+    <button class="back-btn" onclick="showPage('home')">← ホームに戻る</button>
+    <div class="page-header" style="margin-bottom:12px">
+      <h2>${esc(app.name)}</h2>
+      <span class="app-ver">Ver ${esc(app.version)}</span>
+    </div>
+    <div class="detail-info">
+      <div class="detail-info-row"><span class="key">最終公開</span><span class="val">${app.lastPublishedAt?relTime(app.lastPublishedAt):'未公開'}</span></div>
+      <div class="detail-info-row"><span class="key">GitHub</span><span class="val">${app.githubUrl?`<div class="url-link-row"><a class="url-link-text" href="${esc(app.githubUrl)}" target="_blank" rel="noopener">${shortUrl(app.githubUrl)}</a><a class="url-open-btn github" href="${esc(app.githubUrl)}" target="_blank" rel="noopener">⌥ 開く</a></div>`:'—'}</span></div>
+      <div class="detail-info-row"><span class="key">PWA</span><span class="val">${app.pwaUrl?`<div class="url-link-row"><a class="url-link-text" href="${esc(app.pwaUrl)}" target="_blank" rel="noopener">${shortUrl(app.pwaUrl)}</a><a class="url-open-btn pwa" href="${esc(app.pwaUrl)}" target="_blank" rel="noopener">▶ 開く</a></div>`:'—'}</span></div>
+    </div>
+    <div class="publish-btn-row">
+      <button class="btn btn-primary" style="flex:1" onclick="openPublish('${app.id}')">🚀 公開した</button>
+      <button class="btn btn-ghost btn-sm" onclick="openEditApp('${app.id}')">編集</button>
+      <button class="btn btn-danger btn-sm" onclick="confirmDeleteApp('${app.id}')">削除</button>
+    </div>
+  </div>
+  <div class="tabs">
+    ${['fixes','note','prompts','screenshots','releases'].map(t=>`
+    <button class="tab${currentTab===t?' active':''}" onclick="switchTab('${t}')">${tabLabel(t)}</button>`).join('')}
+  </div>
+  <div id="tab-content">${tabContent}</div>`;
+}
+
+function tabLabel(t) {
+  return {fixes:'修正管理',note:'開発ノート',prompts:'プロンプト',screenshots:'スクショ',releases:'公開履歴'}[t];
+}
+
+async function switchTab(tab) {
+  // ノートタブから離れる場合は自動保存
+  await autoSaveNoteIfNeeded();
+  currentTab = tab;
+  const app   = await getRecord('apps', currentAppId);
+  const fixes = await getByIndex('fixes','appId',currentAppId);
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.textContent===tabLabel(tab)));
+  document.getElementById('tab-content').innerHTML = await renderTab(app, fixes);
+}
+
+async function renderTab(app, fixes) {
+  if (currentTab==='fixes') {
+    const html = renderFixes(fixes, app);
+    // 検索状態の復元はDOM挿入後に行う必要があるため呼び出し元の描画完了を待ってから実行
+    setTimeout(() => { if (_searchState['fix-search']) filterFixes(_searchState['fix-search']); }, 0);
+    return html;
+  }
+  if (currentTab==='note')        return await renderNote(app.id);
+  if (currentTab==='prompts')     return await renderPrompts(app.id);
+  if (currentTab==='screenshots') return await renderScreenshots(app.id);
+  if (currentTab==='releases')    return await renderReleases(app.id);
+  return '';
+}
+
+// ── Fixes ──────────────────────────────────
+function renderFixes(fixes, app) {
+  const statuses = ['want','done','pending','verify','complete'];
+  let html = '';
+  if (fixes.length>0) html += searchBoxHtml('fix-search','修正内容を検索...','filterFixes');
+  html += `<div id="fix-list-wrap">`;
+  for (const st of statuses) {
+    const cards = fixes.filter(f=>f.status===st);
+    if (st!=='complete' || cards.length>0) {
+      html += `<div class="fix-section" data-status-group="${st}">
+      <div class="fix-section-title" style="color:${STATUS_COLOR[st]}">
+        ${STATUS_LABEL[st]} <span class="badge" style="color:var(--text)">${cards.length}</span>
+      </div>`;
+      if (cards.length===0) {
+        html += `<div style="font-size:13px;color:var(--text3);padding:6px 0" class="no-fix-placeholder">なし</div>`;
+      }
+      for (const fix of cards.sort((a,b)=>b.createdAt.localeCompare(a.createdAt))) {
+        html += renderFixCard(fix, app);
+      }
+      html += `</div>`;
+    }
+  }
+  html += `</div>`;
+  html += `<div id="fix-search-empty" class="search-empty hidden">該当する修正がありません</div>`;
+  html += `<button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="openAddFix()">＋ 修正を追加</button>`;
+  return html;
+}
+
+function filterFixes(value) {
+  _searchState['fix-search'] = value;
+  const q = value.trim().toLowerCase();
+  const groups = document.querySelectorAll('#fix-list-wrap .fix-section');
+  let totalVisible = 0;
+  groups.forEach(group => {
+    let groupVisible = 0;
+    group.querySelectorAll('.fix-card').forEach(card => {
+      const match = !q || (card.dataset.search||'').includes(q);
+      card.classList.toggle('hidden', !match);
+      if (match) groupVisible++;
+    });
+    // 検索中は「なし」プレースホルダーや空グループ自体を隠す
+    const placeholder = group.querySelector('.no-fix-placeholder');
+    if (placeholder) placeholder.classList.toggle('hidden', !!q);
+    const hasCards = group.querySelectorAll('.fix-card').length > 0;
+    group.classList.toggle('hidden', q ? groupVisible===0 : false);
+    if (!hasCards && !q) group.classList.remove('hidden');
+    totalVisible += groupVisible;
+  });
+  const emptyEl = document.getElementById('fix-search-empty');
+  if (emptyEl) emptyEl.classList.toggle('hidden', !(q && totalVisible===0));
+}
+
+function renderFixCard(fix, app) {
+  const idx   = STATUS_ORDER.indexOf(fix.status);
+  const canNext = idx < STATUS_ORDER.length-1;
+  const canPrev = idx > 0;
+
+  let extraHtml = '';
+  if (fix.status==='verify') {
+    const checks = fix.verifyChecks || {};
+    const items  = [
+      {key:'github',label:'GitHub反映確認'},
+      {key:'chrome', label:'Chrome確認'},
+      {key:'pwa',    label:'PWA確認'},
+      {key:'noIssue',label:'問題なし'},
+    ];
+    extraHtml = `<div class="checklist">${items.map(it=>`
+      <div class="check-item" onclick="toggleVerifyCheck('${fix.id}','${it.key}')">
+        <div class="check-box${checks[it.key]?' checked':''}">✓</div>
+        <span>${it.label}</span>
+      </div>`).join('')}</div>`;
+  }
+
+  return `<div class="fix-card" id="fix-${fix.id}" data-search="${esc(fix.title.toLowerCase())}">
+    <div class="fix-card-title">${esc(fix.title)}</div>
+    ${extraHtml}
+    <div class="fix-actions">
+      ${canNext?`<button class="btn btn-primary btn-sm" onclick="advanceFix('${fix.id}')">${STATUS_LABEL[STATUS_ORDER[idx+1]]}へ →</button>`:''}
+      ${canPrev?`<button class="btn btn-ghost btn-sm" onclick="regressFix('${fix.id}')">← 1つ前に戻す</button>`:''}
+      ${fix.status==='complete'?`<button class="btn btn-ghost btn-sm" onclick="reopenFix('${fix.id}')">再オープン</button>`:''}
+      <button class="btn btn-ghost btn-sm" onclick="openEditFix('${fix.id}')">編集</button>
+      <button class="btn btn-ghost btn-sm" onclick="copyFix('${fix.id}')">📋 コピー</button>
+      <button class="btn btn-danger btn-sm" onclick="confirmDeleteFix('${fix.id}')">削除</button>
+    </div>
+    <div class="fix-date">${fmtDate(fix.createdAt)}</div>
+  </div>`;
+}
+
+async function advanceFix(id) {
+  const fix = await getRecord('fixes', id);
+  const idx = STATUS_ORDER.indexOf(fix.status);
+  if (idx >= STATUS_ORDER.length-1) return;
+  // verify→complete: check all boxes
+  if (fix.status==='verify') {
+    const c = fix.verifyChecks||{};
+    if (!c.github||!c.chrome||!c.pwa||!c.noIssue) { showToast('チェックリストを全て完了してください'); return; }
+  }
+  fix.status    = STATUS_ORDER[idx+1];
+  fix.updatedAt = new Date().toISOString();
+  await put('fixes', fix);
+  reloadTab();
+}
+
+async function regressFix(id) {
+  const fix = await getRecord('fixes', id);
+  const idx = STATUS_ORDER.indexOf(fix.status);
+  if (idx <= 0) return;
+  fix.status    = STATUS_ORDER[idx-1];
+  fix.updatedAt = new Date().toISOString();
+  await put('fixes', fix);
+  reloadTab();
+}
+
+async function reopenFix(id) {
+  const fix  = await getRecord('fixes', id);
+  fix.status  = 'want';
+  fix.updatedAt = new Date().toISOString();
+  await put('fixes', fix);
+  reloadTab();
+}
+
+async function toggleVerifyCheck(fixId, key) {
+  const fix = await getRecord('fixes', fixId);
+  if (!fix.verifyChecks) fix.verifyChecks = {};
+  fix.verifyChecks[key] = !fix.verifyChecks[key];
+  fix.updatedAt = new Date().toISOString();
+  await put('fixes', fix);
+  reloadTab();
+}
+
+async function confirmDeleteFix(id) {
+  openConfirm('この修正を削除しますか？', async () => {
+    await del('fixes', id);
+    reloadTab();
+  });
+}
+
+async function openEditFix(id) {
+  const fix = await getRecord('fixes', id);
+  openModal(`
+  <div class="modal-title">修正を編集</div>
+  <div class="form-group">
+    <label class="form-label">修正内容 *</label>
+    <textarea class="form-input" id="edit-fix-title" style="min-height:80px" autofocus>${esc(fix.title)}</textarea>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="saveEditFix('${id}', this)">更新</button>
+  </div>`);
+}
+
+async function saveEditFix(id, btnEl) {
+  const restore = guardClick(btnEl);
+  if (restore === null) return; // 連打防止
+  const title = document.getElementById('edit-fix-title').value.trim();
+  if (!title) { showToast('内容を入力してください'); if (restore) restore(); return; }
+  const fix = await getRecord('fixes', id);
+  fix.title     = title;
+  fix.updatedAt = new Date().toISOString();
+  await put('fixes', fix);
+  closeModal();
+  showToast('修正内容を更新しました');
+  reloadTab();
+}
+
+async function copyFix(id) {
+  const fix = await getRecord('fixes', id);
+  showCopyModal(fix.title);
+}
+
+// ── Note ───────────────────────────────────
+async function renderNote(appId) {
+  const notes = await getByIndex('notes','appId',appId);
+  const note  = notes[0] || null;
+  const content = note ? note.content : '';
+  return `
+  <textarea class="note-area" id="note-textarea"
+    data-app-id="${appId}"
+    data-note-id="${note?note.id:''}"
+    placeholder="開発メモを書いておこう..."
+    oninput="debounce('note-autosave', () => saveNote(this.dataset.appId, this.dataset.noteId, true), 800)">${esc(content)}</textarea>
+  <div style="margin-top:10px;display:flex;gap:8px">
+    <button class="btn btn-primary" style="flex:1" onclick="saveNote('${appId}','${note?note.id:''}', false, this)">保存</button>
+    <button class="btn btn-ghost" onclick="copyNote()">📋 コピー</button>
+  </div>`;
+}
+
+async function saveNote(appId, existingId, silent, btnEl) {
+  const restore = silent ? null : guardClick(btnEl);
+  if (!silent && restore === null) return; // 連打防止（手動保存ボタンのみ対象）
+  const ta = document.getElementById('note-textarea');
+  if (!ta) { if (restore) restore(); return; }
+  const content = ta.value;
+  const noteId  = existingId || uid();
+  // data-note-id を更新して次回の自動保存でも正しいIDが使われるようにする
+  ta.dataset.noteId = noteId;
+  await put('notes', { id:noteId, appId, content, updatedAt:new Date().toISOString() });
+  if (!silent) showToast('ノートを保存しました');
+}
+
+async function copyNote() {
+  const ta = document.getElementById('note-textarea');
+  if (!ta) return;
+  const text = ta.value;
+  if (!text) { showToast('コピーする内容がありません'); return; }
+  showCopyModal(text);
+}
+
+// ノートの自動保存 — タブ切り替え・ページ移動前に呼ぶ
+async function autoSaveNoteIfNeeded() {
+  const ta = document.getElementById('note-textarea');
+  if (!ta) return; // ノートタブが開いていない
+  flushDebounce('note-autosave'); // 保留中のデバウンス保存があれば取り消し、ここで直接保存する
+  const appId  = ta.dataset.appId;
+  const noteId = ta.dataset.noteId;
+  if (!appId) return;
+  await saveNote(appId, noteId || '', true); // silent=true でトーストなし
+}
+
+// ── Prompts ─────────────────────────────────
+async function renderPrompts(appId) {
+  const all = await getAll('prompts');
+  const prompts = all.filter(p=>p.appId===appId||p.appId===null).sort((a,b)=>(b.isFavorite?1:0)-(a.isFavorite?1:0));
+  let html = `<button class="btn btn-primary" style="width:100%;margin-bottom:14px" onclick="openAddPrompt('${appId}')">＋ プロンプト追加</button>`;
+  if (prompts.length===0) return html+`<div class="empty"><p>プロンプトを保存しよう</p></div>`;
+  for (const p of prompts) {
+    html += `<div class="prompt-card">
+      <div class="prompt-card-header">
+        <span class="prompt-title">${esc(p.title)}</span>
+        <span class="fav-star" onclick="toggleFav('${p.id}')">${p.isFavorite?'★':'☆'}</span>
+      </div>
+      <div class="prompt-preview">${esc(p.content)}</div>
+      <div class="prompt-actions">
+        <button class="btn btn-primary btn-sm" onclick="copyPrompt('${p.id}')">📋 コピー</button>
+        <button class="btn btn-ghost btn-sm" onclick="openEditPrompt('${p.id}')">編集</button>
+        <button class="btn btn-danger btn-sm" onclick="confirmDeletePrompt('${p.id}')">削除</button>
+      </div>
+    </div>`;
+  }
+  return html;
+}
+
+async function copyPrompt(id) {
+  const p = await getRecord('prompts', id);
+  showCopyModal(p.content);
+}
+
+function showCopyModal(text) {
+  const overlay = document.getElementById('modal-overlay');
+  const mc = document.getElementById('modal-content');
+  const safe = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  mc.innerHTML = `
+  <div class="modal-title">\u{1F4CB} プロンプトをコピー</div>
+  <p style="font-size:12px;color:var(--text2);margin-bottom:10px">下のテキストを全選択してコピーしてください</p>
+  <textarea id="copy-ta" readonly style="width:100%;min-height:200px;background:#0a0e1a;border:2px solid var(--accent);border-radius:8px;padding:12px;color:#fff;font-size:13px;line-height:1.6;resize:none;font-family:inherit;-webkit-user-select:text;user-select:text;display:block;">${safe}</textarea>
+  <button class="btn btn-primary" style="width:100%;margin-top:12px" id="copy-exec-btn">📋 全選択してコピー</button>
+  <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="document.getElementById('modal-overlay').classList.add('hidden')">閉じる</button>`;
+  overlay.classList.remove('hidden');
+
+  setTimeout(function() {
+    var ta = document.getElementById('copy-ta');
+    var btn = document.getElementById('copy-exec-btn');
+    if (ta) { ta.focus(); ta.select(); ta.setSelectionRange(0, 99999); }
+    if (btn) {
+      btn.onclick = function() {
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, 99999);
+        var copied = false;
+        try { copied = document.execCommand('copy'); } catch(e) {}
+        if (copied) {
+          showToast('コピーしました！');
+          document.getElementById('modal-overlay').classList.add('hidden');
+          return;
+        }
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(ta.value)
+            .then(function() {
+              showToast('コピーしました！');
+              document.getElementById('modal-overlay').classList.add('hidden');
+            })
+            .catch(function() { showToast('長押し → コピー でコピーしてください'); });
+        } else {
+          showToast('長押し → コピー でコピーしてください');
+        }
+      };
+    }
+  }, 200);
+}
+
+async function toggleFav(id) {
+  const p = await getRecord('prompts', id);
+  p.isFavorite = !p.isFavorite;
+  await put('prompts', p);
+  reloadTab();
+}
+
+async function confirmDeletePrompt(id) {
+  openConfirm('このプロンプトを削除しますか？', async () => {
+    await del('prompts', id);
+    reloadTab();
+  });
+}
+
+// ── Screenshots ─────────────────────────────
+async function renderScreenshots(appId) {
+  const screenshots = await getByIndex('screenshots','appId',appId);
+  let html = `
+  <label class="btn btn-primary" style="width:100%;margin-bottom:14px;cursor:pointer">
+    📸 スクショを追加
+    <input type="file" accept="image/*" style="display:none" onchange="addScreenshot(event,'${appId}')">
+  </label>`;
+  if (screenshots.length===0) return html+`<div class="empty"><p>スクリーンショットがありません</p></div>`;
+  html += `<div class="screenshot-grid">`;
+  for (const s of screenshots.sort((a,b)=>b.takenAt.localeCompare(a.takenAt))) {
+    html += `<div class="screenshot-item">
+      <img src="${s.dataUrl}" loading="lazy">
+      <div class="screenshot-caption">${esc(s.caption||'')}</div>
+      <button class="del-ss" onclick="confirmDeleteSs('${s.id}')">✕</button>
+    </div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+async function addScreenshot(event, appId) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async e => {
+    await put('screenshots', { id:uid(), appId, dataUrl:e.target.result, caption:'', takenAt:new Date().toISOString() });
+    showToast('スクショを保存しました');
+    reloadTab();
+  };
+  reader.readAsDataURL(file);
+}
+
+async function confirmDeleteSs(id) {
+  openConfirm('このスクショを削除しますか？', async () => {
+    await del('screenshots', id);
+    reloadTab();
+  });
+}
+
+// ── Releases ────────────────────────────────
+async function renderReleases(appId) {
+  const releases = await getByIndex('releases','appId',appId);
+  let html = '';
+  if (releases.length===0) return `<div class="empty"><p>公開履歴がありません<br>「公開した」ボタンで記録しよう</p></div>`;
+  for (const r of releases.sort((a,b)=>b.publishedAt.localeCompare(a.publishedAt))) {
+    html += `<div class="release-card">
+      <div class="release-ver">Ver ${esc(r.version)}</div>
+      <div class="release-date">${fmtDate(r.publishedAt)}</div>
+      <div class="release-notes">${esc(r.notes||'—')}</div>
+      <div style="margin-top:8px">
+        <button class="btn btn-danger btn-sm" onclick="cancelRelease('${r.id}','${appId}')">公開取り消し</button>
+      </div>
+    </div>`;
+  }
+  return html;
+}
+
+// ── Publish ─────────────────────────────────
+function openPublish(appId) {
+  openModal(`
+  <div class="modal-title">🚀 公開を記録</div>
+  <div class="form-group">
+    <label class="form-label">バージョン</label>
+    <input class="form-input" id="pub-ver" placeholder="例: 1.2.3">
+  </div>
+  <div class="form-group">
+    <label class="form-label">変更内容メモ</label>
+    <textarea class="form-input" id="pub-notes" placeholder="今回の変更内容..."></textarea>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="savePublish('${appId}', this)">記録する</button>
+  </div>`);
+}
+
+async function savePublish(appId, btnEl) {
+  const restore = guardClick(btnEl);
+  if (restore === null) return; // 連打防止
+  const ver   = document.getElementById('pub-ver').value.trim();
+  const notes = document.getElementById('pub-notes').value.trim();
+  if (!ver) { showToast('バージョンを入力してください'); if (restore) restore(); return; }
+  const now = new Date().toISOString();
+  await put('releases', { id:uid(), appId, version:ver, publishedAt:now, notes });
+  const app = await getRecord('apps', appId);
+  app.version         = ver;
+  app.lastPublishedAt = now;
+  app.updatedAt       = now;
+  await put('apps', app);
+  closeModal();
+  showToast('公開を記録しました 🎉');
+  renderDetail();
+}
+
+async function cancelRelease(releaseId, appId) {
+  openConfirm('公開を取り消しますか？', async () => {
+    await del('releases', releaseId);
+    // recalc lastPublishedAt
+    const releases = await getByIndex('releases','appId',appId);
+    const app      = await getRecord('apps', appId);
+    if (releases.length > 0) {
+      const latest = releases.sort((a,b)=>b.publishedAt.localeCompare(a.publishedAt))[0];
+      app.lastPublishedAt = latest.publishedAt;
+      app.version         = latest.version;
+    } else {
+      app.lastPublishedAt = null;
+    }
+    app.updatedAt = new Date().toISOString();
+    await put('apps', app);
+    showToast('公開を取り消しました');
+    renderDetail();
+  });
+}
+
+// ── Ideas ───────────────────────────────────
+const DEFAULT_IDEA_CATEGORY = '未分類';
+const IDEA_CATEGORIES = ['定型プロンプト','UI/UXデザイン','機能追加','技術的負債','その他'];
+
+async function renderIdeas() {
+  const el    = document.getElementById('page-ideas');
+  const ideas = await getAll('ideas');
+  let html = `
+  <div class="page-header"><h1>アイデア保留庫</h1></div>
+  <button class="btn btn-primary" style="width:100%;margin-bottom:16px" onclick="openAddIdea()">＋ アイデアを追加</button>`;
+  if (ideas.length===0) {
+    html += `<div class="empty"><p>今は実装しないアイデアを<br>ここに保存しよう</p></div>`;
+    el.innerHTML = html;
+    return;
+  }
+
+  html += searchBoxHtml('idea-search','アイデアを検索...','filterIdeas');
+  html += `<div id="idea-list-wrap">`;
+
+  // カテゴリーごとにグループ化
+  const groups = {};
+  for (const idea of ideas) {
+    const cat = idea.category && idea.category.trim() ? idea.category.trim() : DEFAULT_IDEA_CATEGORY;
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(idea);
+  }
+  // 未分類は最後、定型カテゴリーは定義順、それ以外（旧データの自由入力値）は名前順で中間に表示
+  const catNames = Object.keys(groups).sort((a,b) => {
+    if (a===DEFAULT_IDEA_CATEGORY) return 1;
+    if (b===DEFAULT_IDEA_CATEGORY) return -1;
+    const ai = IDEA_CATEGORIES.indexOf(a);
+    const bi = IDEA_CATEGORIES.indexOf(b);
+    if (ai!==-1 && bi!==-1) return ai - bi;       // 両方定型 → 定義順
+    if (ai!==-1) return -1;                       // 定型を旧データより前に
+    if (bi!==-1) return 1;
+    return a.localeCompare(b,'ja');                // 両方旧データ → 名前順
+  });
+
+  for (const cat of catNames) {
+    const list = groups[cat].sort((a,b)=> (b.updatedAt||b.createdAt).localeCompare(a.updatedAt||a.createdAt));
+    html += `<div class="idea-category-group" data-category-group="${esc(cat)}">
+      <div class="idea-category-label">${esc(cat)} <span class="badge">${list.length}</span></div>`;
+    for (const idea of list) {
+      html += renderIdeaCard(idea);
+    }
+    html += `</div>`;
+  }
+  html += `</div>`;
+  html += `<div id="idea-search-empty" class="search-empty hidden">該当するアイデアがありません</div>`;
+  el.innerHTML = html;
+  if (_searchState['idea-search']) filterIdeas(_searchState['idea-search']);
+}
+
+function filterIdeas(value) {
+  _searchState['idea-search'] = value;
+  const q = value.trim().toLowerCase();
+  const groupsEl = document.querySelectorAll('#idea-list-wrap .idea-category-group');
+  let totalVisible = 0;
+  groupsEl.forEach(group => {
+    let groupVisible = 0;
+    group.querySelectorAll('.idea-card').forEach(card => {
+      const match = !q || (card.dataset.search||'').includes(q);
+      card.classList.toggle('hidden', !match);
+      if (match) groupVisible++;
+    });
+    group.classList.toggle('hidden', groupVisible===0);
+    totalVisible += groupVisible;
+  });
+  const emptyEl = document.getElementById('idea-search-empty');
+  if (emptyEl) emptyEl.classList.toggle('hidden', !(q && totalVisible===0));
+}
+
+function renderIdeaCard(idea) {
+  const updated = idea.updatedAt || idea.createdAt;
+  const searchKey = [idea.title, idea.description||'', idea.category||''].join(' ').toLowerCase();
+  return `<div class="idea-card" id="idea-${idea.id}" data-search="${esc(searchKey)}">
+    <div class="idea-card-top">
+      <div class="idea-text">
+        <div class="idea-title">${esc(idea.title)}</div>
+        ${idea.description?`<div class="idea-desc">${esc(idea.description)}</div>`:''}
+        <div class="idea-date">最終更新: ${fmtDateTime(updated)}</div>
+      </div>
+    </div>
+    <div class="idea-actions-row">
+      <button class="btn btn-ghost btn-sm" onclick="openEditIdea('${idea.id}')">編集</button>
+      <button class="btn btn-ghost btn-sm" onclick="copyIdeaAll('${idea.id}')">📋 全コピー</button>
+      <button class="btn btn-ghost btn-sm" onclick="openIdeaPrompt('${idea.id}')">📝 プロンプト</button>
+      <button class="btn btn-primary btn-sm" onclick="openMoveIdeaToFix('${idea.id}')">修正へ →</button>
+      <button class="btn btn-danger btn-sm" onclick="confirmDeleteIdea('${idea.id}')">削除</button>
+    </div>
+  </div>`;
+}
+
+function openAddIdea() {
+  openModal(`
+  <div class="modal-title">💡 アイデアを追加</div>
+  <div class="form-group">
+    <label class="form-label">タイトル</label>
+    <input class="form-input" id="idea-title" placeholder="例: 日記RPG" autofocus
+      oninput="debounce('idea-autosave', autoSaveIdeaIfNeeded, 800)">
+  </div>
+  <div class="form-group">
+    <label class="form-label">カテゴリー</label>
+    <select class="form-input" id="idea-category" onchange="debounce('idea-autosave', autoSaveIdeaIfNeeded, 300)">
+      ${IDEA_CATEGORIES.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+    </select>
+  </div>
+  <div class="form-group">
+    <label class="form-label">メモ（任意）</label>
+    <textarea class="form-input" id="idea-desc" placeholder="詳細やメモ..."
+      oninput="debounce('idea-autosave', autoSaveIdeaIfNeeded, 800)"></textarea>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeIdeaModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="saveIdea(null, this)">保存</button>
+  </div>`);
+  setupIdeaModalAutoSave(null);
+}
+
+async function openEditIdea(id) {
+  const idea = await getRecord('ideas', id);
+  if (!idea) return;
+  const currentCat = idea.category && idea.category.trim() ? idea.category.trim() : '';
+  // 旧データに定型外のカテゴリーが入っている場合はデータを失わないよう選択肢に追加する
+  const isLegacyCat = currentCat && !IDEA_CATEGORIES.includes(currentCat);
+  openModal(`
+  <div class="modal-title">✏️ アイデアを編集</div>
+  <div class="form-group">
+    <label class="form-label">タイトル</label>
+    <input class="form-input" id="idea-title" value="${esc(idea.title)}"
+      oninput="debounce('idea-autosave', autoSaveIdeaIfNeeded, 800)">
+  </div>
+  <div class="form-group">
+    <label class="form-label">カテゴリー</label>
+    <select class="form-input" id="idea-category" onchange="debounce('idea-autosave', autoSaveIdeaIfNeeded, 300)">
+      ${isLegacyCat?`<option value="${esc(currentCat)}" selected>${esc(currentCat)}（旧カテゴリー）</option>`:''}
+      ${IDEA_CATEGORIES.map(c=>`<option value="${esc(c)}"${c===currentCat?' selected':''}>${esc(c)}</option>`).join('')}
+    </select>
+  </div>
+  <div class="form-group">
+    <label class="form-label">メモ（任意）</label>
+    <textarea class="form-input" id="idea-desc"
+      oninput="debounce('idea-autosave', autoSaveIdeaIfNeeded, 800)">${esc(idea.description||'')}</textarea>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeIdeaModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="saveIdea('${id}', this)">更新</button>
+  </div>`);
+  setupIdeaModalAutoSave(id);
+}
+
+// アイデアモーダルの自動保存設定：閉じる際/タブ切替時に書き途中の内容を保存
+let _ideaAutoSaveEditId = null;
+// 排他ロック：自動保存(autoSaveIdeaIfNeeded)と手動保存(saveIdea)が同時に走ると
+// 互いに「新規作成」と判断して2件登録するバグが起きるため、必ずどちらか一方しか
+// DBへの書き込みを行えないようにする。
+let _ideaSaveLock = false;
+function setupIdeaModalAutoSave(editId) {
+  _ideaAutoSaveEditId = editId;
+}
+
+async function autoSaveIdeaIfNeeded() {
+  if (_ideaSaveLock) return; // 手動保存が処理中なら自動保存は何もしない
+  flushDebounce('idea-autosave'); // この呼び出しで直接保存するため、保留中のデバウンスタイマーは不要
+  const titleEl = document.getElementById('idea-title');
+  if (!titleEl) return; // アイデアモーダルが開いていない
+  const title = titleEl.value.trim();
+  const category = document.getElementById('idea-category')?.value.trim() || '';
+  const desc = document.getElementById('idea-desc')?.value.trim() || '';
+  if (!title) return; // タイトル未入力は保存しない
+  _ideaSaveLock = true;
+  try {
+    const now = new Date().toISOString();
+    if (_ideaAutoSaveEditId) {
+      const existing = await getRecord('ideas', _ideaAutoSaveEditId);
+      if (existing) {
+        existing.title = title; existing.category = category; existing.description = desc; existing.updatedAt = now;
+        await put('ideas', existing);
+      }
+    } else {
+      const id = uid();
+      await put('ideas', { id, title, category, description:desc, createdAt:now, updatedAt:now });
+      _ideaAutoSaveEditId = id; // 連続保存で重複作成しないようにする
+    }
+  } finally {
+    _ideaSaveLock = false;
+  }
+}
+
+async function closeIdeaModal() {
+  await autoSaveIdeaIfNeeded(); // 内部で保留中のデバウンスタイマーも処理される
+  _ideaAutoSaveEditId = null;
+  closeModal(null, true); // 既に上で自動保存済みなので closeModal側の自動保存はスキップ
+  renderIdeas();
+}
+
+async function saveIdea(editId, btnEl) {
+  const restore = guardClick(btnEl);
+  if (restore === null) return; // 連打防止: すでに処理中なら何もしない
+  if (_ideaSaveLock) { if (restore) restore(); return; } // 自動保存が処理中なら待たずに中断（disabled状態は維持されない方が安全）
+  const title    = document.getElementById('idea-title').value.trim();
+  const category = document.getElementById('idea-category').value.trim();
+  const desc     = document.getElementById('idea-desc').value.trim();
+  if (!title) { showToast('タイトルを入力してください'); if (restore) restore(); return; }
+  _ideaSaveLock = true;
+  try {
+    flushDebounce('idea-autosave'); // 保存処理を実行するので保留中のデバウンスタイマーは不要
+    const id  = editId || _ideaAutoSaveEditId || uid();
+    const now = new Date().toISOString();
+    const existing = await getRecord('ideas', id);
+    await put('ideas', { id, title, category, description:desc, createdAt:existing?.createdAt||now, updatedAt:now });
+    _ideaAutoSaveEditId = null;
+    closeModal(null, true); // この保存処理自体がDB書き込み済みなので closeModal側の自動保存はスキップ
+    showToast(editId ? 'アイデアを更新しました' : 'アイデアを保存しました');
+    renderIdeas();
+  } finally {
+    _ideaSaveLock = false;
+  }
+}
+
+async function copyIdeaAll(id) {
+  const idea = await getRecord('ideas', id);
+  if (!idea) return;
+  const parts = [idea.title];
+  if (idea.category) parts.push(`【${idea.category}】`);
+  if (idea.description) parts.push(idea.description);
+  showCopyModal(parts.join('\n\n'));
+}
+
+async function confirmDeleteIdea(id) {
+  _ideaAutoSaveEditId = null;
+  openConfirm('このアイデアを削除しますか？関連するプロンプトも削除されます。', async () => {
+    await del('ideas', id);
+    const relatedPrompts = await getByIndex('prompts','ideaId',id);
+    for (const p of relatedPrompts) await del('prompts', p.id);
+    renderIdeas();
+  });
+}
+
+// ── アイデア専用プロンプト ───────────────────
+async function openIdeaPrompt(ideaId) {
+  _ideaAutoSaveEditId = null;
+  const idea = await getRecord('ideas', ideaId);
+  const all  = await getByIndex('prompts','ideaId',ideaId);
+  const existing = all[0] || null;
+  openModal(`
+  <div class="modal-title">📝 「${esc(idea.title)}」のプロンプト</div>
+  <div class="form-group">
+    <label class="form-label">プロンプト内容</label>
+    <textarea class="form-input" id="idea-prompt-content" data-idea-id="${ideaId}" data-prompt-id="${existing?existing.id:''}" style="min-height:160px" placeholder="このアイデア用のプロンプトを書いておこう..."
+      oninput="debounce('idea-prompt-autosave', () => saveIdeaPrompt(this.dataset.ideaId, true), 800)">${existing?esc(existing.content):''}</textarea>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeIdeaPromptModal()">閉じる</button>
+    <button class="btn btn-primary" onclick="saveIdeaPrompt('${ideaId}', false, this)">保存</button>
+  </div>
+  ${existing?`<button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="showCopyModal(document.getElementById('idea-prompt-content').value)">📋 コピー</button>`:''}`);
+}
+
+let _ideaPromptSaveLock = false;
+async function saveIdeaPrompt(ideaId, silent, btnEl) {
+  const restore = silent ? null : guardClick(btnEl);
+  if (!silent && restore === null) return; // 連打防止（手動保存ボタンのみ対象）
+  if (_ideaPromptSaveLock) { if (restore) restore(); return; } // 他方の保存処理が進行中なら中断（重複作成防止）
+  flushDebounce('idea-prompt-autosave'); // これから直接保存するので保留中のデバウンスタイマーは不要
+  const ta = document.getElementById('idea-prompt-content');
+  if (!ta) { if (restore) restore(); return; }
+  const content = ta.value;
+  _ideaPromptSaveLock = true;
+  try {
+    const promptId = ta.dataset.promptId || uid();
+    const idea = await getRecord('ideas', ideaId);
+    const existing = await getRecord('prompts', promptId);
+    await put('prompts', {
+      id: promptId,
+      appId: null,
+      ideaId: ideaId,
+      title: `[アイデア] ${idea ? idea.title : ''}`,
+      content,
+      isFavorite: existing?.isFavorite || false,
+      createdAt: existing?.createdAt || new Date().toISOString()
+    });
+    ta.dataset.promptId = promptId;
+    if (!silent) showToast('プロンプトを保存しました');
+  } finally {
+    _ideaPromptSaveLock = false;
+  }
+}
+
+async function closeIdeaPromptModal() {
+  const ta = document.getElementById('idea-prompt-content');
+  if (ta && ta.value.trim()) {
+    await saveIdeaPrompt(ta.dataset.ideaId, true);
+  }
+  closeModal(null, true); // 上で保存済みのため closeModal側の自動保存はスキップ
+}
+
+async function openMoveIdeaToFix(ideaId) {
+  _ideaAutoSaveEditId = null;
+  const apps = await getAll('apps');
+  if (apps.length===0) { showToast('アプリを先に追加してください'); return; }
+  const idea = await getRecord('ideas', ideaId);
+  openModal(`
+  <div class="modal-title">修正したいへ移動</div>
+  <div class="form-group">
+    <label class="form-label">アプリを選択</label>
+    <select class="form-input" id="move-app">
+      ${apps.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}
+    </select>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="moveIdeaToFix('${ideaId}')">移動</button>
+  </div>`);
+}
+
+async function moveIdeaToFix(ideaId) {
+  const appId = document.getElementById('move-app').value;
+  const idea  = await getRecord('ideas', ideaId);
+  await put('fixes', { id:uid(), appId, title:idea.title, status:'want', verifyChecks:{}, createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(), completedAt:null });
+  await del('ideas', ideaId);
+  closeModal();
+  showToast('修正したいに追加しました');
+  renderIdeas();
+}
+
+// ── Settings ────────────────────────────────
+function renderSettings() {
+  document.getElementById('page-settings').innerHTML = `
+  <div class="page-header"><h1>設定</h1></div>
+  <div class="section-title">バックアップ / 復元</div>
+  <div class="detail-info" style="margin-bottom:12px">
+    <div class="detail-info-row">
+      <span class="key">バックアップ対象</span>
+      <span class="val" style="font-size:12px">アプリ・修正・ノート・プロンプト・公開履歴・アイデア</span>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <button class="btn btn-primary" onclick="exportBackup()">⬇️ JSONバックアップ</button>
+    <label class="btn btn-ghost" style="cursor:pointer">
+      ⬆️ JSONから復元
+      <input type="file" accept=".json" style="display:none" onchange="importBackup(event)">
+    </label>
+  </div>
+  <hr class="divider">
+  <div class="section-title">アプリ情報</div>
+  <div class="detail-info">
+    <div class="detail-info-row"><span class="key">バージョン</span><span class="val">1.0.0</span></div>
+    <div class="detail-info-row"><span class="key">ストレージ</span><span class="val">IndexedDB</span></div>
+    <div class="detail-info-row"><span class="key">オフライン</span><span class="val">対応</span></div>
+  </div>`;
+}
+
+async function exportBackup() {
+  const [apps,fixes,releases,notes,prompts,ideas] = await Promise.all([
+    getAll('apps'),getAll('fixes'),getAll('releases'),getAll('notes'),getAll('prompts'),getAll('ideas')
+  ]);
+  const data = { version:'1', exportedAt:new Date().toISOString(), apps,fixes,releases,notes,prompts,ideas };
+  const blob  = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const url   = URL.createObjectURL(blob);
+  const a     = document.createElement('a');
+  a.href      = url;
+  a.download  = `app_log_${formatBackupTimestamp()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('バックアップを保存しました');
+}
+
+// 日時を YYYYMMDD_HHMMSS 形式で返す。秒単位まで含めるため、同日中に複数回
+// エクスポートしても毎回ファイル名が変わり、上書きされない。
+function formatBackupTimestamp() {
+  const d  = new Date();
+  const p2 = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}${p2(d.getMonth()+1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
+}
+
+async function importBackup(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  let data;
+  try { data = JSON.parse(text); } catch { showToast('JSONが読み込めませんでした'); return; }
+  openConfirm('既存データに追記してインポートしますか？（既存データは消えません）', async () => {
+    const stores = ['apps','fixes','releases','notes','prompts','ideas'];
+    for (const store of stores) {
+      if (data[store]) {
+        for (const item of data[store]) {
+          await put(store, item);
+        }
+      }
+    }
+    showToast('復元が完了しました');
+    showPage('home');
+  });
+}
+
+// ── App Add / Edit ───────────────────────────
+function openAddApp() {
+  openModal(`
+  <div class="modal-title">＋ アプリを追加</div>
+  <div class="form-group">
+    <label class="form-label">アプリ名 *</label>
+    <input class="form-input" id="app-name" placeholder="例: ハレタス" autofocus>
+  </div>
+  <div class="form-group">
+    <label class="form-label">バージョン</label>
+    <input class="form-input" id="app-ver" placeholder="例: 1.0.0" value="1.0.0">
+  </div>
+  <div class="form-group">
+    <label class="form-label">GitHub URL</label>
+    <input class="form-input" id="app-github" placeholder="https://github.com/..." type="url">
+  </div>
+  <div class="form-group">
+    <label class="form-label">PWA URL</label>
+    <input class="form-input" id="app-pwa" placeholder="https://..." type="url">
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="saveApp(null, this)">追加</button>
+  </div>`);
+}
+
+async function saveApp(editId, btnEl) {
+  const restore = guardClick(btnEl);
+  if (restore === null) return; // 連打防止
+  const name   = document.getElementById('app-name').value.trim();
+  const ver    = document.getElementById('app-ver').value.trim();
+  const github = document.getElementById('app-github').value.trim();
+  const pwa    = document.getElementById('app-pwa').value.trim();
+  if (!name) { showToast('アプリ名を入力してください'); if (restore) restore(); return; }
+  const id  = editId || uid();
+  const now = new Date().toISOString();
+  const existing = editId ? await getRecord('apps', editId) : null;
+  await put('apps', {
+    id, name, version:ver||'1.0.0', githubUrl:github, pwaUrl:pwa,
+    lastPublishedAt: existing?.lastPublishedAt || null,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now
+  });
+  closeModal();
+  showToast(editId ? 'アプリを更新しました' : 'アプリを追加しました');
+  if (editId) renderDetail(); else showPage('home');
+}
+
+async function openEditApp(appId) {
+  const app = await getRecord('apps', appId);
+  openModal(`
+  <div class="modal-title">アプリを編集</div>
+  <div class="form-group">
+    <label class="form-label">アプリ名 *</label>
+    <input class="form-input" id="app-name" value="${esc(app.name)}" autofocus>
+  </div>
+  <div class="form-group">
+    <label class="form-label">バージョン</label>
+    <input class="form-input" id="app-ver" value="${esc(app.version)}">
+  </div>
+  <div class="form-group">
+    <label class="form-label">GitHub URL</label>
+    <div style="display:flex;gap:6px;align-items:center">
+      <input class="form-input" id="app-github" value="${esc(app.githubUrl||'')}" type="url" style="flex:1">
+      ${app.githubUrl?`<a href="${esc(app.githubUrl)}" target="_blank" rel="noopener" class="url-open-btn github" style="padding:8px 10px;font-size:12px">開く</a>`:''}
+    </div>
+  </div>
+  <div class="form-group">
+    <label class="form-label">PWA URL</label>
+    <div style="display:flex;gap:6px;align-items:center">
+      <input class="form-input" id="app-pwa" value="${esc(app.pwaUrl||'')}" type="url" style="flex:1">
+      ${app.pwaUrl?`<a href="${esc(app.pwaUrl)}" target="_blank" rel="noopener" class="url-open-btn pwa" style="padding:8px 10px;font-size:12px">開く</a>`:''}
+    </div>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="saveApp('${appId}', this)">更新</button>
+  </div>`);
+}
+
+async function confirmDeleteApp(appId) {
+  openConfirm('このアプリと全関連データを削除しますか？', async () => {
+    await del('apps', appId);
+    const related = ['fixes','releases','notes','prompts','screenshots'];
+    for (const store of related) {
+      const items = await getByIndex(store,'appId',appId);
+      for (const item of items) await del(store, item.id);
+    }
+    showToast('削除しました');
+    showPage('home');
+  });
+}
+
+// ── Fix Add ─────────────────────────────────
+function openAddFix() {
+  openModal(`
+  <div class="modal-title">＋ 修正を追加</div>
+  <div class="form-group">
+    <label class="form-label">修正内容 *</label>
+    <textarea class="form-input" id="fix-title" placeholder="例: PWA更新通知追加" style="min-height:80px" autofocus></textarea>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="saveFix(this)">追加</button>
+  </div>`);
+}
+
+async function saveFix(btnEl) {
+  const restore = guardClick(btnEl);
+  if (restore === null) return; // 連打防止
+  const title = document.getElementById('fix-title').value.trim();
+  if (!title) { showToast('内容を入力してください'); if (restore) restore(); return; }
+  const now = new Date().toISOString();
+  await put('fixes', { id:uid(), appId:currentAppId, title, status:'want', verifyChecks:{}, createdAt:now, updatedAt:now, completedAt:null });
+  closeModal();
+  showToast('修正を追加しました');
+  reloadTab();
+}
+
+// ── Prompt Add / Edit ───────────────────────
+function openAddPrompt(appId) {
+  openModal(`
+  <div class="modal-title">＋ プロンプト追加</div>
+  <div class="form-group">
+    <label class="form-label">タイトル *</label>
+    <input class="form-input" id="pr-title" placeholder="例: 共通要件テンプレート" autofocus>
+  </div>
+  <div class="form-group">
+    <label class="form-label">内容 *</label>
+    <textarea class="form-input" id="pr-content" placeholder="プロンプトの内容..."></textarea>
+  </div>
+  <div class="form-group" style="display:flex;align-items:center;gap:10px">
+    <input type="checkbox" id="pr-fav" style="width:18px;height:18px">
+    <label for="pr-fav" class="form-label" style="margin:0">お気に入りに登録</label>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="savePrompt('${appId}', null, this)">保存</button>
+  </div>`);
+}
+
+async function openEditPrompt(promptId) {
+  const p = await getRecord('prompts', promptId);
+  openModal(`
+  <div class="modal-title">プロンプト編集</div>
+  <div class="form-group">
+    <label class="form-label">タイトル *</label>
+    <input class="form-input" id="pr-title" value="${esc(p.title)}" autofocus>
+  </div>
+  <div class="form-group">
+    <label class="form-label">内容 *</label>
+    <textarea class="form-input" id="pr-content">${esc(p.content)}</textarea>
+  </div>
+  <div class="form-group" style="display:flex;align-items:center;gap:10px">
+    <input type="checkbox" id="pr-fav" style="width:18px;height:18px" ${p.isFavorite?'checked':''}>
+    <label for="pr-fav" class="form-label" style="margin:0">お気に入り</label>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="savePrompt('${p.appId}','${promptId}', this)">更新</button>
+  </div>`);
+}
+
+async function savePrompt(appId, editId, btnEl) {
+  const restore = guardClick(btnEl);
+  if (restore === null) return; // 連打防止
+  const title   = document.getElementById('pr-title').value.trim();
+  const content = document.getElementById('pr-content').value.trim();
+  const fav     = document.getElementById('pr-fav').checked;
+  if (!title||!content) { showToast('タイトルと内容を入力してください'); if (restore) restore(); return; }
+  const id  = editId || uid();
+  const now = new Date().toISOString();
+  const existing = editId ? await getRecord('prompts', editId) : null;
+  await put('prompts', { id, appId:(appId==='null'?null:appId), title, content, isFavorite:fav, createdAt:existing?.createdAt||now });
+  closeModal();
+  showToast('プロンプトを保存しました');
+  reloadTab();
+}
+
+// ── FAB handler ─────────────────────────────
+function openFab() {
+  if (currentPage==='home')   return openAddApp();
+  if (currentPage==='ideas')  return openAddIdea();
+  if (currentPage==='detail') {
+    if (currentTab==='fixes')   return openAddFix();
+    if (currentTab==='prompts') return openAddPrompt(currentAppId);
+    if (currentTab==='ideas')   return openAddIdea();
+  }
+}
+
+// ── Modal Helpers ────────────────────────────
+function openModal(html) {
+  document.getElementById('modal-content').innerHTML = html;
+  document.getElementById('modal-overlay').classList.remove('hidden');
+  // autofocus: モーダル内の autofocus 要素にフォーカス
+  requestAnimationFrame(() => {
+    const el = document.querySelector('#modal-content [autofocus]');
+    if (el) el.focus();
+  });
+}
+
+function closeModal(event, skipAutoSave) {
+  // オーバーレイ背景クリック or 引数なし（プログラム呼び出し）のみ閉じる
+  if (event && event.target !== document.getElementById('modal-overlay')) return;
+  // アイデア/プロンプト入力中に背景タップ等で閉じる場合は自動保存してから閉じる。
+  // ただし saveIdea/saveIdeaPrompt 自身が保存処理後に呼ぶ場合は skipAutoSave=true にして
+  // 二重保存（同内容のレコードがもう1件作られるバグ）を防ぐ。
+  if (!skipAutoSave) {
+    autoSaveIdeaIfNeeded();
+    const promptTa = document.getElementById('idea-prompt-content');
+    if (promptTa && promptTa.value.trim()) saveIdeaPrompt(promptTa.dataset.ideaId, true);
+  }
+  document.getElementById('modal-overlay').classList.add('hidden');
+  if (!skipAutoSave && (document.getElementById('idea-title') || document.getElementById('idea-prompt-content'))) renderIdeas();
+}
+
+// ── アプリ終了/リロード/バックグラウンド化の際に書き込み中の内容を保存 ──
+// beforeunload はモバイルブラウザでは発火が保証されず、非同期処理(IndexedDB書き込み)の
+// 完了を待ってもくれないため、それだけに頼らない。visibilitychange はタブの非表示化・
+// バックグラウンド遷移時に確実に発火するため、こちらを主な保険として使う。
+function flushAllPendingAutoSaves() {
+  autoSaveNoteIfNeeded();
+  autoSaveIdeaIfNeeded();
+  const promptTa = document.getElementById('idea-prompt-content');
+  if (promptTa && promptTa.value.trim()) saveIdeaPrompt(promptTa.dataset.ideaId, true);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushAllPendingAutoSaves();
+});
+window.addEventListener('pagehide', flushAllPendingAutoSaves);
+window.addEventListener('beforeunload', flushAllPendingAutoSaves);
+
+// Esc キーでモーダルを閉じる
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const overlay = document.getElementById('modal-overlay');
+    if (!overlay.classList.contains('hidden')) {
+      autoSaveIdeaIfNeeded();
+      const promptTa = document.getElementById('idea-prompt-content');
+      if (promptTa && promptTa.value.trim()) saveIdeaPrompt(promptTa.dataset.ideaId, true);
+      overlay.classList.add('hidden');
+    }
+  }
+});
+
+function openConfirm(msg, onOk) {
+  openModal(`
+  <div class="modal-title">確認</div>
+  <p style="font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:16px">${msg}</p>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-danger" id="confirm-ok">削除する</button>
+  </div>`);
+  document.getElementById('confirm-ok').onclick = () => { closeModal(); onOk(); };
+  document.getElementById('confirm-ok').textContent = 'OK';
+}
+
+// ── Toast ────────────────────────────────────
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),2200);
+}
+
+// ── Util ─────────────────────────────────────
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function relTime(iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const d    = Math.floor(diff/86400000);
+  if (d===0) return '今日';
+  if (d===1) return '昨日';
+  return `${d}日前`;
+}
+
+function fmtDate(iso) {
+  return new Date(iso).toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric'});
+}
+
+// 日付＋時刻（時:分）まで表示するためのフォーマッタ。アイデアの最終更新表示など、
+// 何時何分に更新したかが分かった方が便利な箇所で使う。
+function fmtDateTime(iso) {
+  const d = new Date(iso);
+  const datePart = d.toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric'});
+  const timePart = d.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+  return `${datePart} ${timePart}`;
+}
+
+function shortUrl(url) {
+  try { return new URL(url).hostname; } catch { return url; }
+}
+
+function getRecord(store, id) {
+  return new Promise((res, rej) => {
+    const req = tx(store).get(id);
+    req.onsuccess = () => res(req.result);
+    req.onerror   = () => rej(req.error);
+  });
+}
+
+async function reloadTab() {
+  const app   = await getRecord('apps', currentAppId);
+  const fixes = await getByIndex('fixes','appId',currentAppId);
+  document.getElementById('tab-content').innerHTML = await renderTab(app, fixes);
+}
+
+// ── Boot ─────────────────────────────────────
+openDB().then(() => {
+  showPage('home');
+}).catch(err => {
+  document.getElementById('page-home').innerHTML = `<div class="empty"><p>データベース初期化エラー: ${err}</p></div>`;
+});
+</script>
+</body>
+</html>
