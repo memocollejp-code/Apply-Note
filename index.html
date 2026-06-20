@@ -467,7 +467,7 @@ async function renderHome() {
     const aHas = aFixes.some(hasTask) ? 1 : 0;
     const bHas = bFixes.some(hasTask) ? 1 : 0;
     if (bHas !== aHas) return bHas - aHas;          // タスクありが上
-    return b.updatedAt.localeCompare(a.updatedAt);  // 同グループは新しい順
+    return safeDateCompareDesc(a.updatedAt, b.updatedAt);  // 同グループは新しい順
   });
   for (const app of sortedApps) {
     const appFixes   = fixes.filter(f=>f.appId===app.id);
@@ -495,7 +495,7 @@ async function renderHome() {
 
   el.innerHTML = `
   <div class="page-header">
-    <h1>開発ダッシュボード</h1>
+    <h1>開発ダッシュボード <span style="font-size:11px;font-weight:600;color:var(--text3);vertical-align:middle">vr1.1</span></h1>
     <button class="btn btn-sm btn-ghost" onclick="openAddApp()">＋ アプリ追加</button>
   </div>
   <div class="today-summary">
@@ -607,7 +607,7 @@ function renderFixes(fixes, app) {
       if (cards.length===0) {
         html += `<div style="font-size:13px;color:var(--text3);padding:6px 0" class="no-fix-placeholder">なし</div>`;
       }
-      for (const fix of cards.sort((a,b)=>b.createdAt.localeCompare(a.createdAt))) {
+      for (const fix of cards.sort((a,b)=>safeDateCompareDesc(a.createdAt,b.createdAt))) {
         html += renderFixCard(fix, app);
       }
       html += `</div>`;
@@ -905,7 +905,7 @@ async function renderScreenshots(appId) {
   </label>`;
   if (screenshots.length===0) return html+`<div class="empty"><p>スクリーンショットがありません</p></div>`;
   html += `<div class="screenshot-grid">`;
-  for (const s of screenshots.sort((a,b)=>b.takenAt.localeCompare(a.takenAt))) {
+  for (const s of screenshots.sort((a,b)=>safeDateCompareDesc(a.takenAt,b.takenAt))) {
     html += `<div class="screenshot-item">
       <img src="${s.dataUrl}" loading="lazy">
       <div class="screenshot-caption">${esc(s.caption||'')}</div>
@@ -940,7 +940,7 @@ async function renderReleases(appId) {
   const releases = await getByIndex('releases','appId',appId);
   let html = '';
   if (releases.length===0) return `<div class="empty"><p>公開履歴がありません<br>「公開した」ボタンで記録しよう</p></div>`;
-  for (const r of releases.sort((a,b)=>b.publishedAt.localeCompare(a.publishedAt))) {
+  for (const r of releases.sort((a,b)=>safeDateCompareDesc(a.publishedAt,b.publishedAt))) {
     html += `<div class="release-card">
       <div class="release-ver">Ver ${esc(r.version)}</div>
       <div class="release-date">${fmtDate(r.publishedAt)}</div>
@@ -996,7 +996,7 @@ async function cancelRelease(releaseId, appId) {
     const releases = await getByIndex('releases','appId',appId);
     const app      = await getRecord('apps', appId);
     if (releases.length > 0) {
-      const latest = releases.sort((a,b)=>b.publishedAt.localeCompare(a.publishedAt))[0];
+      const latest = releases.sort((a,b)=>safeDateCompareDesc(a.publishedAt,b.publishedAt))[0];
       app.lastPublishedAt = latest.publishedAt;
       app.version         = latest.version;
     } else {
@@ -1048,7 +1048,7 @@ async function renderIdeas() {
   });
 
   for (const cat of catNames) {
-    const list = groups[cat].sort((a,b)=> (b.updatedAt||b.createdAt).localeCompare(a.updatedAt||a.createdAt));
+    const list = groups[cat].sort((a,b)=> safeDateCompareDesc(a.updatedAt||a.createdAt, b.updatedAt||b.createdAt));
     html += `<div class="idea-category-group" data-category-group="${esc(cat)}">
       <div class="idea-category-label">${esc(cat)} <span class="badge">${list.length}</span></div>`;
     for (const idea of list) {
@@ -1393,14 +1393,27 @@ async function importBackup(event) {
   try { data = JSON.parse(text); } catch { showToast('JSONが読み込めませんでした'); return; }
   openConfirm('既存データに追記してインポートしますか？（既存データは消えません）', async () => {
     const stores = ['apps','fixes','releases','notes','prompts','ideas'];
+    let successCount = 0;
+    let failCount = 0;
     for (const store of stores) {
-      if (data[store]) {
-        for (const item of data[store]) {
+      if (!data[store]) continue;
+      for (const item of data[store]) {
+        try {
+          if (!item || !item.id) { failCount++; continue; } // id欠落レコードはスキップ
           await put(store, item);
+          successCount++;
+        } catch (e) {
+          // 1件の失敗で全体を止めない。失敗件数だけ記録して続行する。
+          failCount++;
+          console.error(`インポート失敗 (${store}):`, item, e);
         }
       }
     }
-    showToast('復元が完了しました');
+    if (failCount > 0) {
+      showToast(`復元完了（成功${successCount}件 / 失敗${failCount}件）`);
+    } else {
+      showToast(`復元が完了しました（${successCount}件）`);
+    }
     showPage('home');
   });
 }
@@ -1673,6 +1686,19 @@ function showToast(msg) {
 
 // ── Util ─────────────────────────────────────
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ISO日時文字列を安全に降順比較する。値が欠落している（バックアップの復元データや
+// 旧バージョンのレコードで undefined/null になっているケース）でも例外を投げず、
+// 値が無い方を「最も古い」扱いにして並び順の最後に回す。
+// 通常の文字列.localeCompare()は片方がundefinedだと即座に例外を投げ、
+// それが原因でsort()自体が中断し画面に何も表示されなくなる不具合があったため、
+// 一覧表示系のソートは必ずこの関数を経由させる。
+function safeDateCompareDesc(a, b) {
+  if (!a && !b) return 0;
+  if (!a) return 1;  // aが無い → aを後ろに
+  if (!b) return -1; // bが無い → bを後ろに
+  return String(b).localeCompare(String(a));
+}
 
 function relTime(iso) {
   const diff = Date.now() - new Date(iso).getTime();
