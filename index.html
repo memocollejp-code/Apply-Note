@@ -136,11 +136,21 @@ main.hidden{display:none!important}
 .note-area{width:100%;min-height:200px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;color:var(--text);font-size:14px;line-height:1.7;resize:none;font-family:inherit}
 .note-area:focus{outline:none;border-color:var(--accent)}
 
+/* ── アコーディオン（折りたたみ表示） ── */
+/* 開発ノート・アイデアメモなどの読み取り専用表示で、長文を折りたたんで見やすくする。
+   既存のサーフェス配色（var(--surface2)など）に合わせている。 */
+.collapsible-box{position:relative;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;color:var(--text);font-size:14px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+.collapsible-box.collapsed{max-height:200px;overflow:hidden}
+.collapsible-box.collapsed::after{content:'';position:absolute;left:0;right:0;bottom:0;height:48px;background:linear-gradient(transparent,var(--surface2));border-radius:0 0 var(--radius-sm) var(--radius-sm);pointer-events:none}
+.collapsible-toggle{width:100%;margin-top:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;text-align:center}
+.collapsible-toggle:active{opacity:.7}
+
 /* ── Prompt Cards ── */
 .prompt-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px}
 .prompt-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
 .prompt-title{font-size:14px;font-weight:700}
 .prompt-preview{font-size:13px;color:var(--text2);line-height:1.6;white-space:pre-wrap;word-break:break-all;max-height:80px;overflow:hidden}
+.prompt-preview.prompt-masked{color:var(--text3);font-style:italic;cursor:pointer}
 .prompt-actions{display:flex;gap:6px;margin-top:10px}
 .fav-star{font-size:18px;cursor:pointer;transition:transform .2s}
 .fav-star:active{transform:scale(1.3)}
@@ -336,6 +346,46 @@ function flushDebounce(key) {
     return true; // 保留中だった = 呼び出し元で即時保存処理を実行する必要がある
   }
   return false;
+}
+
+// ── アコーディオン（折りたたみ表示）ヘルパー ───────────
+// 開発ノート・アイデアメモなどの読み取り専用表示を、長文の場合だけ折りたたむ。
+// 実際にコンテンツが指定高さを超えるかどうかはDOM描画後でないと分からないため、
+// レンダリング直後にこの関数を呼んで高さを測定し、必要な場合だけ「もっと見る」
+// ボタンを表示する。編集モードに入る際は呼ばない（編集時は常に全表示にする）。
+const ACCORDION_THRESHOLD = 200; // px。要件にある「一定の高さ(例:200px)」をそのまま採用
+function setupAccordion(boxId, toggleBtnId) {
+  const box = document.getElementById(boxId);
+  const btn = document.getElementById(toggleBtnId);
+  if (!box || !btn) return;
+  // scrollHeightで実際のコンテンツの高さを測る（collapsedを外した状態で測定する必要があるため、
+  // 一旦max-heightの制約を外して測り、必要なら戻す）
+  box.classList.remove('collapsed');
+  const fullHeight = box.scrollHeight;
+  if (fullHeight > ACCORDION_THRESHOLD) {
+    box.classList.add('collapsed');
+    btn.classList.remove('hidden');
+    btn.textContent = '▼ もっと見る';
+    btn.dataset.expanded = 'false';
+  } else {
+    btn.classList.add('hidden');
+  }
+}
+
+function toggleAccordion(boxId, toggleBtnId) {
+  const box = document.getElementById(boxId);
+  const btn = document.getElementById(toggleBtnId);
+  if (!box || !btn) return;
+  const expanded = btn.dataset.expanded === 'true';
+  if (expanded) {
+    box.classList.add('collapsed');
+    btn.textContent = '▼ もっと見る';
+    btn.dataset.expanded = 'false';
+  } else {
+    box.classList.remove('collapsed');
+    btn.textContent = '▲ 折りたたむ';
+    btn.dataset.expanded = 'true';
+  }
 }
 
 // ── 検索ボックス共通ヘルパー ──────────────────
@@ -584,7 +634,12 @@ async function renderTab(app, fixes) {
     setTimeout(() => { if (_searchState['fix-search']) filterFixes(_searchState['fix-search']); }, 0);
     return html;
   }
-  if (currentTab==='note')        return await renderNote(app.id);
+  if (currentTab==='note') {
+    const html = await renderNote(app.id);
+    // 折りたたみの高さ判定はDOM挿入後でないと正しい値が取れないため、描画完了を待ってから実行
+    setTimeout(() => setupAccordion('note-view-box','note-view-toggle'), 0);
+    return html;
+  }
   if (currentTab==='prompts')     return await renderPrompts(app.id);
   if (currentTab==='screenshots') return await renderScreenshots(app.id);
   if (currentTab==='releases')    return await renderReleases(app.id);
@@ -747,6 +802,7 @@ async function saveEditFix(id, btnEl) {
   if (restore === null) return; // 連打防止
   const title = document.getElementById('edit-fix-title').value.trim();
   if (!title) { showToast('内容を入力してください'); if (restore) restore(); return; }
+  if (!validateTextInput(title, MAX_LEN.title, '修正内容')) { if (restore) restore(); return; }
   const fix = await getRecord('fixes', id);
   fix.title     = title;
   fix.updatedAt = new Date().toISOString();
@@ -766,11 +822,26 @@ async function renderNote(appId) {
   const notes = await getByIndex('notes','appId',appId);
   const note  = notes[0] || null;
   const content = note ? note.content : '';
+  // 読み取り専用（折りたたみ表示）と編集（全表示textarea）の2モードを切り替える。
+  // 既存データに何も書かれていない場合は最初から編集モードで開く。
+  if (!content) return noteEditModeHtml(appId, note);
+  return `
+  <div class="collapsible-box" id="note-view-box">${esc(content)}</div>
+  <button class="collapsible-toggle hidden" id="note-view-toggle" onclick="toggleAccordion('note-view-box','note-view-toggle')"></button>
+  <div style="margin-top:10px;display:flex;gap:8px">
+    <button class="btn btn-primary" style="flex:1" onclick="enterNoteEditMode('${appId}','${note?note.id:''}')">✏️ 編集</button>
+    <button class="btn btn-ghost" onclick="copyNote()">📋 コピー</button>
+  </div>`;
+}
+
+function noteEditModeHtml(appId, note) {
+  const content = note ? note.content : '';
   return `
   <textarea class="note-area" id="note-textarea"
     data-app-id="${appId}"
     data-note-id="${note?note.id:''}"
     placeholder="開発メモを書いておこう..."
+    autofocus
     oninput="debounce('note-autosave', () => saveNote(this.dataset.appId, this.dataset.noteId, true), 800)">${esc(content)}</textarea>
   <div style="margin-top:10px;display:flex;gap:8px">
     <button class="btn btn-primary" style="flex:1" onclick="saveNote('${appId}','${note?note.id:''}', false, this)">保存</button>
@@ -778,12 +849,27 @@ async function renderNote(appId) {
   </div>`;
 }
 
+// 折りたたみ表示から編集モードへ切り替える。表示用divのまま編集すると
+// アコーディオンの高さ制約と衝突するため、editボタンでtextarea表示に切り替える。
+async function enterNoteEditMode(appId, noteId) {
+  const note = noteId ? await getRecord('notes', noteId) : null;
+  document.getElementById('tab-content').innerHTML = noteEditModeHtml(appId, note);
+  const ta = document.getElementById('note-textarea');
+  if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+}
+
 async function saveNote(appId, existingId, silent, btnEl) {
   const restore = silent ? null : guardClick(btnEl);
   if (!silent && restore === null) return; // 連打防止（手動保存ボタンのみ対象）
   const ta = document.getElementById('note-textarea');
   if (!ta) { if (restore) restore(); return; }
-  const content = ta.value;
+  let content = ta.value;
+  if (silent) {
+    content = sanitizeForAutoSave(content, MAX_LEN.text); // 自動保存は丸めるだけで止めない
+  } else if (!validateTextInput(content, MAX_LEN.text, 'ノート')) {
+    if (restore) restore();
+    return;
+  }
   const noteId  = existingId || uid();
   // data-note-id を更新して次回の自動保存でも正しいIDが使われるようにする
   ta.dataset.noteId = noteId;
@@ -817,13 +903,20 @@ async function renderPrompts(appId) {
   let html = `<button class="btn btn-primary" style="width:100%;margin-bottom:14px" onclick="openAddPrompt('${appId}')">＋ プロンプト追加</button>`;
   if (prompts.length===0) return html+`<div class="empty"><p>プロンプトを保存しよう</p></div>`;
   for (const p of prompts) {
+    const isSensitive = !!p.isSensitive;
+    // 機密フラグ付きはデフォルトでマスク表示。中身はDOM上に平文のまま存在するため
+    // 完全な保護ではない（下部の解説参照）が、画面の盗み見・うっかり表示は防げる。
+    const previewHtml = isSensitive
+      ? `<div class="prompt-preview prompt-masked" id="prompt-preview-${p.id}" data-revealed="false" data-content="${esc(p.content)}">🔒 機密情報のため非表示（タップして表示）</div>`
+      : `<div class="prompt-preview" id="prompt-preview-${p.id}">${esc(p.content)}</div>`;
     html += `<div class="prompt-card">
       <div class="prompt-card-header">
-        <span class="prompt-title">${esc(p.title)}</span>
+        <span class="prompt-title">${isSensitive?'🔒 ':''}${esc(p.title)}</span>
         <span class="fav-star" onclick="toggleFav('${p.id}')">${p.isFavorite?'★':'☆'}</span>
       </div>
-      <div class="prompt-preview">${esc(p.content)}</div>
+      ${previewHtml}
       <div class="prompt-actions">
+        ${isSensitive?`<button class="btn btn-ghost btn-sm" onclick="toggleSensitiveReveal('${p.id}')">👁 表示切替</button>`:''}
         <button class="btn btn-primary btn-sm" onclick="copyPrompt('${p.id}')">📋 コピー</button>
         <button class="btn btn-ghost btn-sm" onclick="openEditPrompt('${p.id}')">編集</button>
         <button class="btn btn-danger btn-sm" onclick="confirmDeletePrompt('${p.id}')">削除</button>
@@ -831,6 +924,23 @@ async function renderPrompts(appId) {
     </div>`;
   }
   return html;
+}
+
+// 機密プロンプトのマスク表示を切り替える。完全なセキュリティ機能ではなく
+// 「画面を覗かれた時にうっかり見えてしまう」のを防ぐUI上の配慮にすぎない。
+// content は data-content 属性（esc()済み）から読み取るため、onclick属性内に
+// 生の文字列を埋め込む必要がなく、引用符や記号を含む内容でも安全に動作する。
+function toggleSensitiveReveal(id) {
+  const el = document.getElementById(`prompt-preview-${id}`);
+  if (!el) return;
+  const revealed = el.dataset.revealed === 'true';
+  if (revealed) {
+    el.textContent = '🔒 機密情報のため非表示（タップして表示）';
+    el.dataset.revealed = 'false';
+  } else {
+    el.textContent = el.dataset.content; // textContentへの代入なのでHTMLエスケープ不要（XSS安全）
+    el.dataset.revealed = 'true';
+  }
 }
 
 async function copyPrompt(id) {
@@ -906,8 +1016,14 @@ async function renderScreenshots(appId) {
   if (screenshots.length===0) return html+`<div class="empty"><p>スクリーンショットがありません</p></div>`;
   html += `<div class="screenshot-grid">`;
   for (const s of screenshots.sort((a,b)=>safeDateCompareDesc(a.takenAt,b.takenAt))) {
+    // dataUrl は data:image/... 形式以外を画像表示しない。バックアップJSONの
+    // インポート経由で任意の文字列が紛れ込んでいた場合に、img src への直接挿入による
+    // XSSを防ぐための再検証（保存時にもチェックしているが、表示時にも二重に確認する）。
+    const imgHtml = isSafeImageDataUrl(s.dataUrl)
+      ? `<img src="${s.dataUrl}" loading="lazy">`
+      : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text3);font-size:11px;text-align:center;padding:8px">⚠️ 不正な画像データ</div>`;
     html += `<div class="screenshot-item">
-      <img src="${s.dataUrl}" loading="lazy">
+      ${imgHtml}
       <div class="screenshot-caption">${esc(s.caption||'')}</div>
       <button class="del-ss" onclick="confirmDeleteSs('${s.id}')">✕</button>
     </div>`;
@@ -919,9 +1035,16 @@ async function renderScreenshots(appId) {
 async function addScreenshot(event, appId) {
   const file = event.target.files[0];
   if (!file) return;
+  // file inputに accept="image/*" を指定していても、ブラウザ側のチェックは
+  // 強制力がないため、ここでもMIMEタイプを確認する（二重防御）。
+  if (!file.type.startsWith('image/')) { showToast('画像ファイルを選択してください'); return; }
   const reader = new FileReader();
   reader.onload = async e => {
-    await put('screenshots', { id:uid(), appId, dataUrl:e.target.result, caption:'', takenAt:new Date().toISOString() });
+    const dataUrl = e.target.result;
+    // FileReader.readAsDataURL は通常常に正しい data:image/... 形式を返すが、
+    // 念のため形式を再検証してから保存する（不正な形式が紛れ込んだ場合に備える）。
+    if (!isSafeImageDataUrl(dataUrl)) { showToast('画像データの形式が不正です'); return; }
+    await put('screenshots', { id:uid(), appId, dataUrl, caption:'', takenAt:new Date().toISOString() });
     showToast('スクショを保存しました');
     reloadTab();
   };
@@ -977,6 +1100,8 @@ async function savePublish(appId, btnEl) {
   const ver   = document.getElementById('pub-ver').value.trim();
   const notes = document.getElementById('pub-notes').value.trim();
   if (!ver) { showToast('バージョンを入力してください'); if (restore) restore(); return; }
+  if (!validateTextInput(ver, MAX_LEN.title, 'バージョン')) { if (restore) restore(); return; }
+  if (!validateTextInput(notes, MAX_LEN.text, '変更内容メモ')) { if (restore) restore(); return; }
   const now = new Date().toISOString();
   await put('releases', { id:uid(), appId, version:ver, publishedAt:now, notes });
   const app = await getRecord('apps', appId);
@@ -1060,6 +1185,10 @@ async function renderIdeas() {
   html += `<div id="idea-search-empty" class="search-empty hidden">該当するアイデアがありません</div>`;
   el.innerHTML = html;
   if (_searchState['idea-search']) filterIdeas(_searchState['idea-search']);
+  // 折りたたみの高さ判定はDOM挿入後でないと正しい値が取れないため、描画完了を待ってから実行
+  for (const idea of ideas) {
+    if (idea.description) setupAccordion(`idea-desc-${idea.id}`, `idea-desc-toggle-${idea.id}`);
+  }
 }
 
 function filterIdeas(value) {
@@ -1088,7 +1217,7 @@ function renderIdeaCard(idea) {
     <div class="idea-card-top">
       <div class="idea-text">
         <div class="idea-title">${esc(idea.title)}</div>
-        ${idea.description?`<div class="idea-desc">${esc(idea.description)}</div>`:''}
+        ${idea.description?`<div class="collapsible-box idea-desc" id="idea-desc-${idea.id}">${esc(idea.description)}</div><button class="collapsible-toggle hidden" id="idea-desc-toggle-${idea.id}" onclick="toggleAccordion('idea-desc-${idea.id}','idea-desc-toggle-${idea.id}')"></button>`:''}
         <div class="idea-date">最終更新: ${fmtDateTime(updated)}</div>
       </div>
     </div>
@@ -1175,9 +1304,11 @@ async function autoSaveIdeaIfNeeded() {
   flushDebounce('idea-autosave'); // この呼び出しで直接保存するため、保留中のデバウンスタイマーは不要
   const titleEl = document.getElementById('idea-title');
   if (!titleEl) return; // アイデアモーダルが開いていない
-  const title = titleEl.value.trim();
+  // 自動保存は入力中に割り込むものなので、ここではエラーで止めず安全な形に丸めて保存する
+  // （文字数オーバーは切り詰め、制御文字は除去）。明確なエラー通知は手動保存の saveIdea 側が担う。
+  const title = sanitizeForAutoSave(titleEl.value.trim(), MAX_LEN.title);
   const category = document.getElementById('idea-category')?.value.trim() || '';
-  const desc = document.getElementById('idea-desc')?.value.trim() || '';
+  const desc = sanitizeForAutoSave(document.getElementById('idea-desc')?.value.trim() || '', MAX_LEN.text);
   if (!title) return; // タイトル未入力は保存しない
   _ideaSaveLock = true;
   try {
@@ -1213,6 +1344,8 @@ async function saveIdea(editId, btnEl) {
   const category = document.getElementById('idea-category').value.trim();
   const desc     = document.getElementById('idea-desc').value.trim();
   if (!title) { showToast('タイトルを入力してください'); if (restore) restore(); return; }
+  if (!validateTextInput(title, MAX_LEN.title, 'タイトル')) { if (restore) restore(); return; }
+  if (!validateTextInput(desc, MAX_LEN.text, 'メモ')) { if (restore) restore(); return; }
   _ideaSaveLock = true;
   try {
     flushDebounce('idea-autosave'); // 保存処理を実行するので保留中のデバウンスタイマーは不要
@@ -1276,7 +1409,13 @@ async function saveIdeaPrompt(ideaId, silent, btnEl) {
   flushDebounce('idea-prompt-autosave'); // これから直接保存するので保留中のデバウンスタイマーは不要
   const ta = document.getElementById('idea-prompt-content');
   if (!ta) { if (restore) restore(); return; }
-  const content = ta.value;
+  let content = ta.value;
+  if (silent) {
+    content = sanitizeForAutoSave(content, MAX_LEN.text); // 自動保存は丸めるだけで止めない
+  } else if (!validateTextInput(content, MAX_LEN.text, '内容')) {
+    if (restore) restore();
+    return;
+  }
   _ideaPromptSaveLock = true;
   try {
     const promptId = ta.dataset.promptId || uid();
@@ -1363,10 +1502,10 @@ function renderSettings() {
 }
 
 async function exportBackup() {
-  const [apps,fixes,releases,notes,prompts,ideas] = await Promise.all([
-    getAll('apps'),getAll('fixes'),getAll('releases'),getAll('notes'),getAll('prompts'),getAll('ideas')
+  const [apps,fixes,releases,notes,prompts,ideas,screenshots] = await Promise.all([
+    getAll('apps'),getAll('fixes'),getAll('releases'),getAll('notes'),getAll('prompts'),getAll('ideas'),getAll('screenshots')
   ]);
-  const data = { version:'1', exportedAt:new Date().toISOString(), apps,fixes,releases,notes,prompts,ideas };
+  const data = { version:'1', exportedAt:new Date().toISOString(), apps,fixes,releases,notes,prompts,ideas,screenshots };
   const blob  = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const url   = URL.createObjectURL(blob);
   const a     = document.createElement('a');
@@ -1392,7 +1531,7 @@ async function importBackup(event) {
   let data;
   try { data = JSON.parse(text); } catch { showToast('JSONが読み込めませんでした'); return; }
   openConfirm('既存データに追記してインポートしますか？（既存データは消えません）', async () => {
-    const stores = ['apps','fixes','releases','notes','prompts','ideas'];
+    const stores = ['apps','fixes','releases','notes','prompts','ideas','screenshots'];
     let successCount = 0;
     let failCount = 0;
     for (const store of stores) {
@@ -1400,6 +1539,13 @@ async function importBackup(event) {
       for (const item of data[store]) {
         try {
           if (!item || !item.id) { failCount++; continue; } // id欠落レコードはスキップ
+          // screenshots.dataUrl はバックアップJSON経由で任意の文字列を注入できる
+          // 攻撃面になりうるため、data:image/...形式以外は取り込まない（XSS対策）。
+          if (store === 'screenshots' && item.dataUrl && !isSafeImageDataUrl(item.dataUrl)) {
+            failCount++;
+            console.error('不正な画像データのためスキップ:', item.id);
+            continue;
+          }
           await put(store, item);
           successCount++;
         } catch (e) {
@@ -1452,6 +1598,10 @@ async function saveApp(editId, btnEl) {
   const github = document.getElementById('app-github').value.trim();
   const pwa    = document.getElementById('app-pwa').value.trim();
   if (!name) { showToast('アプリ名を入力してください'); if (restore) restore(); return; }
+  if (!validateTextInput(name, MAX_LEN.title, 'アプリ名')) { if (restore) restore(); return; }
+  if (!validateTextInput(ver, MAX_LEN.title, 'バージョン')) { if (restore) restore(); return; }
+  if (!validateTextInput(github, MAX_LEN.url, 'GitHub URL')) { if (restore) restore(); return; }
+  if (!validateTextInput(pwa, MAX_LEN.url, 'PWA URL')) { if (restore) restore(); return; }
   const id  = editId || uid();
   const now = new Date().toISOString();
   const existing = editId ? await getRecord('apps', editId) : null;
@@ -1530,6 +1680,7 @@ async function saveFix(btnEl) {
   if (restore === null) return; // 連打防止
   const title = document.getElementById('fix-title').value.trim();
   if (!title) { showToast('内容を入力してください'); if (restore) restore(); return; }
+  if (!validateTextInput(title, MAX_LEN.title, '修正内容')) { if (restore) restore(); return; }
   const now = new Date().toISOString();
   await put('fixes', { id:uid(), appId:currentAppId, title, status:'want', verifyChecks:{}, createdAt:now, updatedAt:now, completedAt:null });
   closeModal();
@@ -1553,6 +1704,7 @@ function openAddPrompt(appId) {
     <input type="checkbox" id="pr-fav" style="width:18px;height:18px">
     <label for="pr-fav" class="form-label" style="margin:0">お気に入りに登録</label>
   </div>
+  ${sensitiveToggleHtml(false)}
   <div class="modal-actions">
     <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
     <button class="btn btn-primary" onclick="savePrompt('${appId}', null, this)">保存</button>
@@ -1575,10 +1727,28 @@ async function openEditPrompt(promptId) {
     <input type="checkbox" id="pr-fav" style="width:18px;height:18px" ${p.isFavorite?'checked':''}>
     <label for="pr-fav" class="form-label" style="margin:0">お気に入り</label>
   </div>
+  ${sensitiveToggleHtml(p.isSensitive||false)}
   <div class="modal-actions">
     <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
     <button class="btn btn-primary" onclick="savePrompt('${p.appId}','${promptId}', this)">更新</button>
   </div>`);
+}
+
+// 「機密情報を含む」トグルのHTML雛形。
+// ⚠️ セキュリティ注意: これはUI上の表示/非表示（マスキング）を切り替えるだけの雛形であり、
+// IndexedDB内のデータそのものは暗号化されない。APIキー等の本物の機密情報を保存する
+// 用途には現状のままでは使わないこと。本格的に使うには、Web Crypto API等での
+// 暗号化・端末ロック連携・自動ログアウト等の追加実装が必要（下部の解説を参照）。
+function sensitiveToggleHtml(checked) {
+  return `
+  <div class="form-group" style="display:flex;align-items:center;gap:10px">
+    <input type="checkbox" id="pr-sensitive" style="width:18px;height:18px" ${checked?'checked':''}>
+    <label for="pr-sensitive" class="form-label" style="margin:0">🔒 機密情報を含む（表示時にマスクする）</label>
+  </div>
+  <p style="font-size:11px;color:var(--text3);margin:-6px 0 14px;line-height:1.5">
+    ※ この設定は画面上の表示/非表示を切り替えるだけです。データ自体は暗号化されません。
+    APIキー等の本物の機密情報は、現状この機能での保管を推奨しません。
+  </p>`;
 }
 
 async function savePrompt(appId, editId, btnEl) {
@@ -1587,11 +1757,16 @@ async function savePrompt(appId, editId, btnEl) {
   const title   = document.getElementById('pr-title').value.trim();
   const content = document.getElementById('pr-content').value.trim();
   const fav     = document.getElementById('pr-fav').checked;
+  // 「機密情報を含む」トグル。これは表示/非表示のUI制御のみを行う雛形であり、
+  // 暗号化等の実装ではない点に注意（下部の解説参照）。
+  const isSensitive = document.getElementById('pr-sensitive')?.checked || false;
   if (!title||!content) { showToast('タイトルと内容を入力してください'); if (restore) restore(); return; }
+  if (!validateTextInput(title, MAX_LEN.title, 'タイトル')) { if (restore) restore(); return; }
+  if (!validateTextInput(content, MAX_LEN.text, '内容')) { if (restore) restore(); return; }
   const id  = editId || uid();
   const now = new Date().toISOString();
   const existing = editId ? await getRecord('prompts', editId) : null;
-  await put('prompts', { id, appId:(appId==='null'?null:appId), title, content, isFavorite:fav, createdAt:existing?.createdAt||now });
+  await put('prompts', { id, appId:(appId==='null'?null:appId), title, content, isFavorite:fav, isSensitive, createdAt:existing?.createdAt||now });
   closeModal();
   showToast('プロンプトを保存しました');
   reloadTab();
@@ -1686,6 +1861,55 @@ function showToast(msg) {
 
 // ── Util ─────────────────────────────────────
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── 入力バリデーション ──────────────────────────
+// 文字数制限の定義。フィールドの用途ごとに上限を分ける（タイトルは短く、
+// 本文・プロンプトは長文を許容）。DBスキーマは変更せず、保存前にチェックするだけ。
+const MAX_LEN = {
+  title:   200,   // アプリ名・修正タイトル・アイデアタイトルなど短い見出し
+  text:    20000, // ノート・アイデアメモ・プロンプト本文など長文
+  url:     2000,  // GitHub URL / PWA URL
+};
+
+// 入力値が上限文字数を超えていないか確認する。超えていればトーストで知らせて
+// false を返す（呼び出し元はこれを見て保存処理を中断する）。
+function validateLength(value, maxLen, fieldLabel) {
+  if (value.length > maxLen) {
+    showToast(`${fieldLabel}は${maxLen}文字以内で入力してください（現在${value.length}文字）`);
+    return false;
+  }
+  return true;
+}
+
+// 制御文字（タブ・改行以外）が含まれていないか確認する。貼り付け時に紛れ込む
+// 不可視文字や、悪意のある入力に使われがちなNULL文字等を弾く簡易フィルタ。
+function hasInvalidControlChars(value) {
+  // \t(09) \n(0A) \r(0D) は許可。それ以外のC0制御文字とDEL(7F)を禁止する。
+  return /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(value);
+}
+
+function validateTextInput(value, maxLen, fieldLabel) {
+  if (hasInvalidControlChars(value)) {
+    showToast(`${fieldLabel}に使用できない文字が含まれています`);
+    return false;
+  }
+  return validateLength(value, maxLen, fieldLabel);
+}
+
+// data:image/... 形式かどうかを検証する。スクリーンショット保存時、および
+// バックアップJSONインポート時に dataUrl フィールドへ任意のHTML/JSが
+// 混入していないかを確認するために使う（img src への直接挿入によるXSS対策）。
+function isSafeImageDataUrl(value) {
+  return typeof value === 'string' && /^data:image\/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(value);
+}
+
+// 自動保存（入力中のデバウンス保存）専用のサニタイズ。手動保存と違ってユーザーの
+// 入力を中断させたくないため、エラーで止めるのではなく安全な形に丸めて保存する。
+function sanitizeForAutoSave(value, maxLen) {
+  // 改行・タブ以外の制御文字を除去
+  const cleaned = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+  return cleaned.length > maxLen ? cleaned.slice(0, maxLen) : cleaned;
+}
 
 // ISO日時文字列を安全に降順比較する。値が欠落している（バックアップの復元データや
 // 旧バージョンのレコードで undefined/null になっているケース）でも例外を投げず、
