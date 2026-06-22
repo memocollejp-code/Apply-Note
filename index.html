@@ -163,11 +163,16 @@ main.hidden{display:none!important}
 
 /* ── Ideas ── */
 .idea-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px}
-.idea-card-top{display:flex;align-items:flex-start;gap:10px}
+.idea-card-top{display:flex;align-items:center;gap:10px;cursor:pointer}
 .idea-text{flex:1;min-width:0}
 .idea-title{font-size:14px;font-weight:600}
-.idea-desc{font-size:13px;color:var(--text2);margin-top:2px;white-space:pre-wrap;word-break:break-word}
+.idea-title-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.idea-chevron{flex-shrink:0;color:var(--text3);font-size:12px;transition:transform .2s}
+.idea-chevron.open{transform:rotate(180deg)}
+.idea-desc{font-size:13px;color:var(--text2);margin-top:8px;white-space:pre-wrap;word-break:break-word}
 .idea-date{font-size:11px;color:var(--text3);margin-top:6px}
+.idea-body{max-height:0;overflow:hidden;transition:max-height .25s ease}
+.idea-body.open{max-height:2000px}
 .idea-actions-col{display:flex;flex-direction:column;gap:4px;flex-shrink:0}
 .idea-actions-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .idea-category-group{margin-bottom:18px}
@@ -1185,9 +1190,14 @@ async function renderIdeas() {
   html += `<div id="idea-search-empty" class="search-empty hidden">該当するアイデアがありません</div>`;
   el.innerHTML = html;
   if (_searchState['idea-search']) filterIdeas(_searchState['idea-search']);
-  // 折りたたみの高さ判定はDOM挿入後でないと正しい値が取れないため、描画完了を待ってから実行
+  // 検索や保存による再描画でも、ユーザーが開いていたカードの開閉状態を維持する
   for (const idea of ideas) {
-    if (idea.description) setupAccordion(`idea-desc-${idea.id}`, `idea-desc-toggle-${idea.id}`);
+    if (_ideaCardOpenState[idea.id]) {
+      const body = document.getElementById(`idea-body-${idea.id}`);
+      const chevron = document.getElementById(`idea-chevron-${idea.id}`);
+      if (body) body.classList.add('open');
+      if (chevron) chevron.classList.add('open');
+    }
   }
 }
 
@@ -1213,22 +1223,44 @@ function filterIdeas(value) {
 function renderIdeaCard(idea) {
   const updated = idea.updatedAt || idea.createdAt;
   const searchKey = [idea.title, idea.description||'', idea.category||''].join(' ').toLowerCase();
+  const bodyId = `idea-body-${idea.id}`;
+  const chevronId = `idea-chevron-${idea.id}`;
   return `<div class="idea-card" id="idea-${idea.id}" data-search="${esc(searchKey)}">
-    <div class="idea-card-top">
+    <div class="idea-card-top" onclick="toggleIdeaCard('${idea.id}')">
       <div class="idea-text">
-        <div class="idea-title">${esc(idea.title)}</div>
-        ${idea.description?`<div class="collapsible-box idea-desc" id="idea-desc-${idea.id}">${esc(idea.description)}</div><button class="collapsible-toggle hidden" id="idea-desc-toggle-${idea.id}" onclick="toggleAccordion('idea-desc-${idea.id}','idea-desc-toggle-${idea.id}')"></button>`:''}
-        <div class="idea-date">最終更新: ${fmtDateTime(updated)}</div>
+        <div class="idea-title-row">
+          <span class="idea-title">${esc(idea.title)}</span>
+          <span class="idea-chevron" id="${chevronId}">▼</span>
+        </div>
       </div>
     </div>
-    <div class="idea-actions-row">
-      <button class="btn btn-ghost btn-sm" onclick="openEditIdea('${idea.id}')">編集</button>
-      <button class="btn btn-ghost btn-sm" onclick="copyIdeaAll('${idea.id}')">📋 全コピー</button>
-      <button class="btn btn-ghost btn-sm" onclick="openIdeaPrompt('${idea.id}')">📝 プロンプト</button>
-      <button class="btn btn-primary btn-sm" onclick="openMoveIdeaToFix('${idea.id}')">修正へ →</button>
-      <button class="btn btn-danger btn-sm" onclick="confirmDeleteIdea('${idea.id}')">削除</button>
+    <div class="idea-body" id="${bodyId}">
+      <div class="idea-text">
+        ${idea.description?`<div class="idea-desc">${esc(idea.description)}</div>`:''}
+        <div class="idea-date">最終更新: ${fmtDateTime(updated)}</div>
+      </div>
+      <div class="idea-actions-row">
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openEditIdea('${idea.id}')">編集</button>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();copyIdeaAll('${idea.id}')">📋 全コピー</button>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openIdeaPrompt('${idea.id}')">📝 プロンプト</button>
+        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openMoveIdeaToFix('${idea.id}')">修正へ →</button>
+        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();confirmDeleteIdea('${idea.id}')">削除</button>
+      </div>
     </div>
   </div>`;
+}
+
+// アイデアカードの開閉トグル。タイトル行タップで展開/折りたたみする。
+// 開閉状態は_ideaCardOpenStateに保持し、検索フィルタ等で再描画されても維持されるようにする。
+const _ideaCardOpenState = {};
+function toggleIdeaCard(id) {
+  const body = document.getElementById(`idea-body-${id}`);
+  const chevron = document.getElementById(`idea-chevron-${id}`);
+  if (!body || !chevron) return;
+  const willOpen = !body.classList.contains('open');
+  body.classList.toggle('open', willOpen);
+  chevron.classList.toggle('open', willOpen);
+  _ideaCardOpenState[id] = willOpen;
 }
 
 function openAddIdea() {
