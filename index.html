@@ -87,6 +87,15 @@ main.hidden{display:none!important}
 .stat-pill.pending{background:#2a1800;color:var(--orange)}
 .app-card-arrow{color:var(--text3);font-size:14px;flex-shrink:0}
 
+/* ── Folder Card ── */
+.folder-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);margin:18px 0 10px;display:flex;align-items:center;justify-content:space-between}
+.folder-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:7px;cursor:pointer;transition:border-color .2s;display:flex;align-items:center;gap:10px}
+.folder-card:active{border-color:var(--accent)}
+.folder-icon{font-size:18px;flex-shrink:0}
+.folder-card-body{flex:1;min-width:0}
+.folder-name{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.folder-count{font-size:11px;color:var(--text3);margin-top:2px}
+
 /* ── Btn ── */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;border-radius:var(--radius-sm);padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;transition:opacity .2s}
 .btn:active{opacity:.7}
@@ -232,6 +241,7 @@ textarea.form-input{min-height:100px;resize:none;line-height:1.6}
 <main id="page-ideas" class="hidden"></main>
 <main id="page-settings" class="hidden"></main>
 <main id="page-detail" class="hidden"></main>
+<main id="page-folder" class="hidden"></main>
 
 <!-- FAB -->
 <button class="fab hidden" id="fab" onclick="openFab()">＋</button>
@@ -263,7 +273,7 @@ textarea.form-input{min-height:100px;resize:none;line-height:1.6}
 <script>
 // ── IndexedDB ──────────────────────────────
 const DB_NAME = 'appdev-log-db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 let db;
 
 function openDB() {
@@ -290,6 +300,17 @@ function openDB() {
       if (d.objectStoreNames.contains('prompts')) {
         const s = tx.objectStore('prompts');
         if (!s.indexNames.contains('ideaId')) s.createIndex('ideaId','ideaId');
+      }
+      // v2 → v3: アプリをフォルダ分けする機能のため folders ストアを新設し、
+      // apps に folderId インデックスを追加する。既存のアプリは folderId が
+      // undefined のままになるが、これは「フォルダ未設定」として扱うため
+      // データ移行は不要（既存データを書き換えずそのまま動作する）。
+      if (!d.objectStoreNames.contains('folders')) {
+        d.createObjectStore('folders', {keyPath:'id'});
+      }
+      if (d.objectStoreNames.contains('apps')) {
+        const s = tx.objectStore('apps');
+        if (!s.indexNames.contains('folderId')) s.createIndex('folderId','folderId');
       }
     };
     req.onsuccess = e => { db = e.target.result; resolve(db); };
@@ -421,6 +442,34 @@ function guardClick(btnEl) {
   return () => { btnEl.disabled = false; btnEl.textContent = btnEl.dataset.origText || originalText; };
 }
 
+// ── 長押し検知ヘルパー ────────────────────────
+// アプリカードの長押しでフォルダ選択メニューを開く。タップ（クリック）操作と
+// 長押し操作を区別するため、pointerdown/pointerup/pointercancelで時間を計測する。
+// 長押しが成立した場合は、続くclickイベント（onclick="showDetail(...)"）を
+// キャンセルして、詳細画面に遷移しないようにする。
+const LONG_PRESS_MS = 500;
+let _longPressTimer = null;
+let _longPressFired = false;
+function attachLongPress(el, appId) {
+  const start = () => {
+    _longPressFired = false;
+    _longPressTimer = setTimeout(() => {
+      _longPressFired = true;
+      if (navigator.vibrate) navigator.vibrate(15); // 対応端末では軽い振動でフィードバック
+      openMoveAppToFolder(appId);
+    }, LONG_PRESS_MS);
+  };
+  const cancel = () => { if (_longPressTimer) { clearTimeout(_longPressTimer); _longPressTimer = null; } };
+  el.addEventListener('pointerdown', start);
+  el.addEventListener('pointerup', cancel);
+  el.addEventListener('pointercancel', cancel);
+  el.addEventListener('pointerleave', cancel);
+  // 長押しが成立した直後に発火するclickイベント（タップ扱いされてしまう）を抑止する
+  el.addEventListener('click', e => {
+    if (_longPressFired) { e.preventDefault(); e.stopPropagation(); _longPressFired = false; }
+  });
+}
+
 // ── State ──────────────────────────────────
 let currentPage = 'home';
 let currentAppId = null;
@@ -463,14 +512,14 @@ function showPage(page) {
   // アイデア追加/編集モーダルが開いたまま画面遷移する場合も自動保存
   autoSaveIdeaIfNeeded();
   currentPage = page;
-  ['home','ideas','settings','detail'].forEach(p => {
+  ['home','ideas','settings','detail','folder'].forEach(p => {
     document.getElementById('page-'+p).classList.toggle('hidden', p!==page);
   });
   ['home','ideas','settings'].forEach(p => {
     const btn = document.getElementById('nav-'+p);
     if (btn) btn.classList.toggle('active', p===page);
   });
-  document.getElementById('fab').classList.toggle('hidden', page==='settings'||page==='detail');
+  document.getElementById('fab').classList.toggle('hidden', page==='settings'||page==='detail'||page==='folder');
   if (page==='home')     renderHome();
   if (page==='ideas')    renderIdeas();
   if (page==='settings') renderSettings();
@@ -487,6 +536,172 @@ function showDetail(appId) {
   renderDetail();
 }
 
+let currentFolderId = null;
+function showFolder(folderId) {
+  currentFolderId = folderId;
+  delete _searchState['folder-search'];
+  history.pushState({ page: 'folder', folderId }, '', '');
+  showPage('folder');
+  renderFolder();
+}
+
+async function renderFolder() {
+  const el = document.getElementById('page-folder');
+  const folder = await getRecord('folders', currentFolderId);
+  if (!folder) { showPage('home'); return; }
+  const [allApps, fixes] = await Promise.all([getAll('apps'), getAll('fixes')]);
+  const apps = allApps.filter(a => a.folderId === currentFolderId);
+
+  const sortedApps = apps.slice().sort((a, b) => {
+    const aFixes = fixes.filter(f => f.appId === a.id);
+    const bFixes = fixes.filter(f => f.appId === b.id);
+    const hasTask = f => ['want','pending','verify'].includes(f.status);
+    const aHas = aFixes.some(hasTask) ? 1 : 0;
+    const bHas = bFixes.some(hasTask) ? 1 : 0;
+    if (bHas !== aHas) return bHas - aHas;
+    return safeDateCompareDesc(a.updatedAt, b.updatedAt);
+  });
+
+  let appsHtml = '';
+  for (const app of sortedApps) appsHtml += renderAppCardHtml(app, fixes);
+
+  el.innerHTML = `
+  <div class="detail-header">
+    <button class="back-btn" onclick="showPage('home')">← ホームに戻る</button>
+    <div class="page-header" style="margin-bottom:12px">
+      <h2>📁 ${esc(folder.name)}</h2>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="openEditFolder('${folder.id}')">編集</button>
+        <button class="btn btn-danger btn-sm" onclick="confirmDeleteFolder('${folder.id}')">削除</button>
+      </div>
+    </div>
+  </div>
+  ${apps.length>0?searchBoxHtml('folder-search','アプリ名で検索...','filterFolderApps'):''}
+  <div id="folder-apps-list">
+  ${apps.length===0?`<div class="empty"><p>このフォルダにはまだ<br>アプリがありません</p></div>`:appsHtml}
+  </div>
+  <div id="folder-search-empty" class="search-empty hidden">該当するアプリがありません</div>
+  <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="openAddApp('${folder.id}')">＋ このフォルダにアプリ追加</button>`;
+
+  if (_searchState['folder-search']) filterFolderApps(_searchState['folder-search']);
+  attachLongPressToAppCards(sortedApps);
+}
+
+function filterFolderApps(value) {
+  _searchState['folder-search'] = value;
+  const q = value.trim().toLowerCase();
+  const cards = document.querySelectorAll('#folder-apps-list .app-card');
+  let visibleCount = 0;
+  cards.forEach(card => {
+    const match = !q || (card.dataset.search||'').includes(q);
+    card.classList.toggle('hidden', !match);
+    if (match) visibleCount++;
+  });
+  const emptyEl = document.getElementById('folder-search-empty');
+  if (emptyEl) emptyEl.classList.toggle('hidden', !(q && visibleCount===0 && cards.length>0));
+}
+
+// ── フォルダ追加 / 編集 / 削除 ──────────────────
+function openAddFolder() {
+  openModal(`
+  <div class="modal-title">📁 フォルダを追加</div>
+  <div class="form-group">
+    <label class="form-label">フォルダ名 *</label>
+    <input class="form-input" id="folder-name" placeholder="例: 個人開発アプリ" autofocus>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="saveFolder(null, this)">追加</button>
+  </div>`);
+}
+
+async function openEditFolder(folderId) {
+  const folder = await getRecord('folders', folderId);
+  if (!folder) return;
+  openModal(`
+  <div class="modal-title">フォルダ名を編集</div>
+  <div class="form-group">
+    <label class="form-label">フォルダ名 *</label>
+    <input class="form-input" id="folder-name" value="${esc(folder.name)}" autofocus>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="saveFolder('${folderId}', this)">更新</button>
+  </div>`);
+}
+
+async function saveFolder(editId, btnEl) {
+  const restore = guardClick(btnEl);
+  if (restore === null) return; // 連打防止
+  const name = document.getElementById('folder-name').value.trim();
+  if (!name) { showToast('フォルダ名を入力してください'); if (restore) restore(); return; }
+  if (!validateTextInput(name, MAX_LEN.title, 'フォルダ名')) { if (restore) restore(); return; }
+  const id = editId || uid();
+  const now = new Date().toISOString();
+  const existing = editId ? await getRecord('folders', editId) : null;
+  await put('folders', { id, name, createdAt: existing?.createdAt || now });
+  closeModal();
+  showToast(editId ? 'フォルダを更新しました' : 'フォルダを追加しました');
+  if (editId && currentPage === 'folder') renderFolder(); else showPage('home');
+}
+
+async function confirmDeleteFolder(folderId) {
+  openConfirm('このフォルダを削除しますか？中のアプリはホーム画面（フォルダなし）に戻ります。', async () => {
+    // フォルダ自体を削除し、中のアプリは folderId を外して「フォルダ未設定」に戻す。
+    // アプリ自体やその修正・ノート等のデータは消さない（フォルダはあくまで分類用の入れ物）。
+    const apps = await getAll('apps');
+    for (const app of apps) {
+      if (app.folderId === folderId) {
+        app.folderId = null;
+        await put('apps', app);
+      }
+    }
+    await del('folders', folderId);
+    showToast('フォルダを削除しました');
+    showPage('home');
+  });
+}
+
+// ── 長押しでフォルダ選択 ─────────────────────
+async function openMoveAppToFolder(appId) {
+  const app = await getRecord('apps', appId);
+  if (!app) return;
+  const folders = await getAll('folders');
+  if (folders.length === 0) {
+    showToast('フォルダがありません。先にフォルダを作成してください');
+    return;
+  }
+  openModal(`
+  <div class="modal-title">📁 フォルダを選択</div>
+  <p style="font-size:13px;color:var(--text2);margin-bottom:14px">「${esc(app.name)}」の移動先を選んでください</p>
+  <div class="form-group">
+    <button class="btn ${!app.folderId?'btn-primary':'btn-ghost'}" style="width:100%;margin-bottom:8px;justify-content:flex-start" onclick="moveAppToFolder('${appId}', null, this)">
+      📂 フォルダなし${!app.folderId?' ✓':''}
+    </button>
+    ${folders.map(f=>`
+    <button class="btn ${app.folderId===f.id?'btn-primary':'btn-ghost'}" style="width:100%;margin-bottom:8px;justify-content:flex-start" onclick="moveAppToFolder('${appId}', '${f.id}', this)">
+      📁 ${esc(f.name)}${app.folderId===f.id?' ✓':''}
+    </button>`).join('')}
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+  </div>`);
+}
+
+async function moveAppToFolder(appId, folderId, btnEl) {
+  const restore = guardClick(btnEl);
+  if (restore === null) return; // 連打防止
+  const app = await getRecord('apps', appId);
+  if (!app) { if (restore) restore(); return; }
+  app.folderId = folderId;
+  app.updatedAt = new Date().toISOString();
+  await put('apps', app);
+  closeModal();
+  const folder = folderId ? await getRecord('folders', folderId) : null;
+  showToast(folder ? `「${folder.name}」に移動しました` : 'フォルダなしに移動しました');
+  if (currentPage === 'folder') renderFolder(); else showPage('home');
+}
+
 // ブラウザ / スマホの「戻るボタン」を処理
 window.addEventListener('popstate', (e) => {
   // モーダルが開いていれば閉じる
@@ -497,8 +712,8 @@ window.addEventListener('popstate', (e) => {
     history.pushState(e.state, '', '');
     return;
   }
-  // 詳細画面ならホームへ戻る
-  if (currentPage === 'detail') {
+  // 詳細画面・フォルダ画面ならホームへ戻る
+  if (currentPage === 'detail' || currentPage === 'folder') {
     showPage('home');
   }
 });
@@ -506,12 +721,16 @@ window.addEventListener('popstate', (e) => {
 // ── Render Home ─────────────────────────────
 async function renderHome() {
   const el = document.getElementById('page-home');
-  const [apps, fixes] = await Promise.all([getAll('apps'), getAll('fixes')]);
+  const [allApps, fixes, folders] = await Promise.all([getAll('apps'), getAll('fixes'), getAll('folders')]);
 
   const todayWant    = fixes.filter(f=>f.status==='want').length;
   const todayDone    = fixes.filter(f=>f.status==='done').length;
   const todayPending = fixes.filter(f=>f.status==='pending').length;
   const todayVerify  = fixes.filter(f=>f.status==='verify').length;
+
+  // フォルダ未設定（folderIdが無い）アプリのみホーム直下に表示する。
+  // 既存データはfolderIdを持たないため、自動的にここに表示され続け、移行は不要。
+  const apps = allApps.filter(a => !a.folderId);
 
   let appsHtml = '';
   // タスクあり（want/pending/verify）優先、同グループ内は updatedAt 降順
@@ -525,33 +744,34 @@ async function renderHome() {
     return safeDateCompareDesc(a.updatedAt, b.updatedAt);  // 同グループは新しい順
   });
   for (const app of sortedApps) {
-    const appFixes   = fixes.filter(f=>f.appId===app.id);
-    const wantCount  = appFixes.filter(f=>f.status==='want').length;
-    const pendCount  = appFixes.filter(f=>f.status==='pending'||f.status==='verify').length;
-    const lastPub    = app.lastPublishedAt ? relTime(app.lastPublishedAt) : '未公開';
-    const searchKey  = app.name.toLowerCase();
-    appsHtml += `
-    <div class="app-card" data-search="${esc(searchKey)}" onclick="showDetail('${app.id}')">
-      <div class="app-card-body">
-        <div class="app-card-header">
-          <span class="app-name">${esc(app.name)}</span>
-          <span class="app-ver">v${esc(app.version)}</span>
+    appsHtml += renderAppCardHtml(app, fixes);
+  }
+
+  let foldersHtml = '';
+  if (folders.length > 0) {
+    const sortedFolders = folders.slice().sort((a,b)=>safeDateCompareDesc(a.createdAt,b.createdAt));
+    foldersHtml = `<div class="folder-section-title">フォルダ</div>`;
+    for (const folder of sortedFolders) {
+      const count = allApps.filter(a => a.folderId === folder.id).length;
+      foldersHtml += `
+      <div class="folder-card" onclick="showFolder('${folder.id}')">
+        <span class="folder-icon">📁</span>
+        <div class="folder-card-body">
+          <div class="folder-name">${esc(folder.name)}</div>
+          <div class="folder-count">${count}個のアプリ</div>
         </div>
-        <div class="app-meta">公開: ${lastPub}</div>
-        <div class="app-stats">
-          ${wantCount>0?`<span class="stat-pill want">修正したい ${wantCount}</span>`:''}
-          ${pendCount>0?`<span class="stat-pill pending">公開待ち ${pendCount}</span>`:''}
-          ${wantCount===0&&pendCount===0?'<span style="font-size:10px;color:var(--text3)">✓ 対応なし</span>':''}
-        </div>
-      </div>
-      <span class="app-card-arrow">›</span>
-    </div>`;
+        <span class="app-card-arrow">›</span>
+      </div>`;
+    }
   }
 
   el.innerHTML = `
   <div class="page-header">
     <h1>開発ダッシュボード <span style="font-size:11px;font-weight:600;color:var(--text3);vertical-align:middle">vr1.1</span></h1>
-    <button class="btn btn-sm btn-ghost" onclick="openAddApp()">＋ アプリ追加</button>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-sm btn-ghost" onclick="openAddFolder()">📁＋</button>
+      <button class="btn btn-sm btn-ghost" onclick="openAddApp()">＋ アプリ追加</button>
+    </div>
   </div>
   <div class="today-summary">
     <h3>今日の開発状況</h3>
@@ -562,13 +782,51 @@ async function renderHome() {
       <div class="today-item c-verify"><div class="num">${todayVerify}</div><div class="lbl">再現確認</div></div>
     </div>
   </div>
-  ${apps.length>0?searchBoxHtml('home-search','アプリ名で検索...','filterHomeApps'):''}
+  ${allApps.length>0?searchBoxHtml('home-search','アプリ名で検索...','filterHomeApps'):''}
   <div id="home-apps-list">
-  ${apps.length===0?`<div class="empty"><p>アプリを追加して<br>開発を管理しよう</p></div>`:appsHtml}
+  ${apps.length===0&&folders.length===0?`<div class="empty"><p>アプリを追加して<br>開発を管理しよう</p></div>`:appsHtml}
   </div>
+  ${foldersHtml}
   <div id="home-search-empty" class="search-empty hidden">該当するアプリがありません</div>`;
 
   if (_searchState['home-search']) filterHomeApps(_searchState['home-search']);
+  attachLongPressToAppCards(sortedApps);
+}
+
+// アプリカードのHTMLを生成する共通関数。ホーム直下（フォルダ未設定）とフォルダ詳細画面の
+// どちらからも同じ見た目で呼べるよう切り出した。
+function renderAppCardHtml(app, fixes) {
+  const appFixes  = fixes.filter(f=>f.appId===app.id);
+  const wantCount = appFixes.filter(f=>f.status==='want').length;
+  const pendCount = appFixes.filter(f=>f.status==='pending'||f.status==='verify').length;
+  const lastPub   = app.lastPublishedAt ? relTime(app.lastPublishedAt) : '未公開';
+  const searchKey = app.name.toLowerCase();
+  return `
+  <div class="app-card" id="app-card-${app.id}" data-search="${esc(searchKey)}" onclick="showDetail('${app.id}')">
+    <div class="app-card-body">
+      <div class="app-card-header">
+        <span class="app-name">${esc(app.name)}</span>
+        <span class="app-ver">v${esc(app.version)}</span>
+      </div>
+      <div class="app-meta">公開: ${lastPub}</div>
+      <div class="app-stats">
+        ${wantCount>0?`<span class="stat-pill want">修正したい ${wantCount}</span>`:''}
+        ${pendCount>0?`<span class="stat-pill pending">公開待ち ${pendCount}</span>`:''}
+        ${wantCount===0&&pendCount===0?'<span style="font-size:10px;color:var(--text3)">✓ 対応なし</span>':''}
+      </div>
+    </div>
+    <span class="app-card-arrow">›</span>
+  </div>`;
+}
+
+// 描画されたアプリカードDOM要素すべてに長押し検知を後付けする。
+// innerHTML経由で挿入したHTMLにはaddEventListenerが直接書けないため、
+// 描画完了後にこの関数を呼んでJS側からイベントを登録する。
+function attachLongPressToAppCards(apps) {
+  for (const app of apps) {
+    const el = document.getElementById(`app-card-${app.id}`);
+    if (el) attachLongPress(el, app.id);
+  }
 }
 
 function filterHomeApps(value) {
@@ -1534,10 +1792,10 @@ function renderSettings() {
 }
 
 async function exportBackup() {
-  const [apps,fixes,releases,notes,prompts,ideas,screenshots] = await Promise.all([
-    getAll('apps'),getAll('fixes'),getAll('releases'),getAll('notes'),getAll('prompts'),getAll('ideas'),getAll('screenshots')
+  const [apps,fixes,releases,notes,prompts,ideas,screenshots,folders] = await Promise.all([
+    getAll('apps'),getAll('fixes'),getAll('releases'),getAll('notes'),getAll('prompts'),getAll('ideas'),getAll('screenshots'),getAll('folders')
   ]);
-  const data = { version:'1', exportedAt:new Date().toISOString(), apps,fixes,releases,notes,prompts,ideas,screenshots };
+  const data = { version:'1', exportedAt:new Date().toISOString(), apps,fixes,releases,notes,prompts,ideas,screenshots,folders };
   const blob  = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const url   = URL.createObjectURL(blob);
   const a     = document.createElement('a');
@@ -1563,7 +1821,7 @@ async function importBackup(event) {
   let data;
   try { data = JSON.parse(text); } catch { showToast('JSONが読み込めませんでした'); return; }
   openConfirm('既存データに追記してインポートしますか？（既存データは消えません）', async () => {
-    const stores = ['apps','fixes','releases','notes','prompts','ideas','screenshots'];
+    const stores = ['apps','fixes','releases','notes','prompts','ideas','screenshots','folders'];
     let successCount = 0;
     let failCount = 0;
     for (const store of stores) {
@@ -1597,7 +1855,8 @@ async function importBackup(event) {
 }
 
 // ── App Add / Edit ───────────────────────────
-function openAddApp() {
+async function openAddApp(presetFolderId) {
+  const folders = await getAll('folders');
   openModal(`
   <div class="modal-title">＋ アプリを追加</div>
   <div class="form-group">
@@ -1608,6 +1867,14 @@ function openAddApp() {
     <label class="form-label">バージョン</label>
     <input class="form-input" id="app-ver" placeholder="例: 1.0.0" value="1.0.0">
   </div>
+  ${folders.length>0?`
+  <div class="form-group">
+    <label class="form-label">フォルダ</label>
+    <select class="form-input" id="app-folder">
+      <option value="">フォルダなし</option>
+      ${folders.map(f=>`<option value="${f.id}"${f.id===presetFolderId?' selected':''}>${esc(f.name)}</option>`).join('')}
+    </select>
+  </div>`:''}
   <div class="form-group">
     <label class="form-label">GitHub URL</label>
     <input class="form-input" id="app-github" placeholder="https://github.com/..." type="url">
@@ -1629,6 +1896,8 @@ async function saveApp(editId, btnEl) {
   const ver    = document.getElementById('app-ver').value.trim();
   const github = document.getElementById('app-github').value.trim();
   const pwa    = document.getElementById('app-pwa').value.trim();
+  const folderSelect = document.getElementById('app-folder');
+  const folderId = folderSelect ? (folderSelect.value || null) : undefined; // selectが無い(フォルダ0件)場合は既存値を維持
   if (!name) { showToast('アプリ名を入力してください'); if (restore) restore(); return; }
   if (!validateTextInput(name, MAX_LEN.title, 'アプリ名')) { if (restore) restore(); return; }
   if (!validateTextInput(ver, MAX_LEN.title, 'バージョン')) { if (restore) restore(); return; }
@@ -1639,17 +1908,25 @@ async function saveApp(editId, btnEl) {
   const existing = editId ? await getRecord('apps', editId) : null;
   await put('apps', {
     id, name, version:ver||'1.0.0', githubUrl:github, pwaUrl:pwa,
+    folderId: folderId !== undefined ? folderId : (existing?.folderId ?? null),
     lastPublishedAt: existing?.lastPublishedAt || null,
     createdAt: existing?.createdAt || now,
     updatedAt: now
   });
   closeModal();
   showToast(editId ? 'アプリを更新しました' : 'アプリを追加しました');
-  if (editId) renderDetail(); else showPage('home');
+  if (editId) {
+    renderDetail();
+  } else if (currentPage === 'folder') {
+    renderFolder();
+  } else {
+    showPage('home');
+  }
 }
 
 async function openEditApp(appId) {
   const app = await getRecord('apps', appId);
+  const folders = await getAll('folders');
   openModal(`
   <div class="modal-title">アプリを編集</div>
   <div class="form-group">
@@ -1660,6 +1937,14 @@ async function openEditApp(appId) {
     <label class="form-label">バージョン</label>
     <input class="form-input" id="app-ver" value="${esc(app.version)}">
   </div>
+  ${folders.length>0?`
+  <div class="form-group">
+    <label class="form-label">フォルダ</label>
+    <select class="form-input" id="app-folder">
+      <option value="">フォルダなし</option>
+      ${folders.map(f=>`<option value="${f.id}"${f.id===app.folderId?' selected':''}>${esc(f.name)}</option>`).join('')}
+    </select>
+  </div>`:''}
   <div class="form-group">
     <label class="form-label">GitHub URL</label>
     <div style="display:flex;gap:6px;align-items:center">
