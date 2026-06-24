@@ -1,4 +1,4 @@
-const CACHE_NAME = "appdev-log-20260622-212906";
+const CACHE_NAME = "appdev-log-20260624-185041";
 const ASSETS = [
   './',
   './index.html',
